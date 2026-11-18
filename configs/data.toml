@@ -1,0 +1,39 @@
+# Data engine config: python -m dataEngine --config configs/data.toml <step>
+# Paths are relative to the repo root.
+
+seed = 1234
+
+[golden]
+data_root = "dataEngine/data"
+out_dir = "outputs/data/golden"
+exclude_langs = ["mr"]   # V1 is Hindi + English; Marathi pages are set aside for V2
+drop_invalid = false     # true = skip invalid pages; every one is listed in problems.json
+
+[split]
+out_dir = "outputs/data/splits"
+test_fraction = 0.15
+dev_fraction = 0.15
+max_group_fraction = 0.15   # a police station larger than this is split by document
+
+[[sources]]
+name = "golden_regions"
+converter = "golden_regions"
+pages = "outputs/data/golden/pages.jsonl"
+splits = "outputs/data/splits"
+data_root = "dataEngine/data"
+out_dir = "outputs/data/crops/golden_regions"
+
+# Official public sets (docs/training-plan.md §8) use converter = "labelled_folder".
+# Add each one only after downloading it from the official site and reading its README:
+#
+# [[sources]]
+# name = "iiit_hw_dev"
+# converter = "labelled_folder"
+# root = "downloads/<unpacked archive>"                    # from the README
+# label_files = { train = "...", dev = "...", test = "..." }  # from the README
+# separator = "..."                                         # from the README
+# langs = ["hi"]
+# script = "handwritten"
+# level = "word"
+# out_dir = "outputs/data/crops/iiit_hw_dev"
+# origin = { url = "...", licence = "...", sha256 = "..." }  # recorded at download

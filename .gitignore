@@ -1,0 +1,19 @@
+# Generated data, checkpoints, reports
+outputs/
+
+# Golden FIR data contains personal information (names, addresses, caste). Never commit it.
+dataEngine/data/
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Git Bash crash dumps
+*.stackdump
+
+# Downloads (partial browser downloads, dataset archives)
+*.crdownload
+downloads/

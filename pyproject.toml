@@ -1,0 +1,50 @@
+[project]
+name = "ocr-training"
+version = "0.1.0"
+description = "Hindi document OCR: data engine, DeepSeek-OCR fine-tuning and evaluation."
+requires-python = ">=3.12"
+dependencies = [
+    "pillow>=10.4",
+    "numpy>=1.26",
+    "rapidfuzz>=3.9",
+]
+
+[project.optional-dependencies]
+# GPU machine. Install torch first from the CUDA index (see README).
+train = [
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "transformers==4.46.3",
+    "peft==0.13.2",
+    "accelerate==1.1.1",
+    "tensorboard>=2.18",
+    # Imported by DeepSeek-OCR's own model code (trust_remote_code).
+    "addict",
+    "easydict",
+    "einops",
+    "tqdm",
+    "requests",
+]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["dataEngine*", "models*", "training*", "evaluation*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
+# The `dataEngine` package name is camelCase by decision (see SKILL.md Decisions).
+ignore = ["N999"]
+# Used on purpose in messages and comments (sizes, ranges).
+allowed-confusables = ["×", "–"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

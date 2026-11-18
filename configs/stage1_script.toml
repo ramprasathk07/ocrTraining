@@ -1,0 +1,89 @@
+# Stage 1 — Devanagari script adaptation (docs/stages/stage-1-script-adaptation.md)
+#   torchrun --nproc_per_node=N -m training   --config configs/stage1_script.toml [--smoke]
+#   torchrun --nproc_per_node=N -m evaluation --config configs/stage1_script.toml [--checkpoint DIR]
+
+name = "stage1_script"
+
+[model]
+name_or_path = "deepseek-ai/DeepSeek-OCR"
+revision = "9f30c71f441d010e5429c532364a86705536c53a"   # pinned; change only on purpose
+attn_implementation = "flash_attention_2"               # "eager" where flash-attn is missing (e.g. ROCm)
+
+[image]   # the model's own modes; Stage 0 picks one from speed + dev CER
+base_size = 640
+image_size = 640
+crop_mode = false   # Small: crop stretched to 640x640 → 111 positions. Gundam: crop_mode = true, base_size = 1024
+
+[lora]
+r = 16
+alpha = 32
+dropout = 0.05
+# Attention in all 12 layers + layer-0 dense MLP + shared experts (layers 1-11): 84 modules, 3,978,240 params.
+# Vision, projector, router and the 64 routed experts stay frozen.
+target_modules = 'model\.layers\.\d+\.(self_attn\.[qkvo]_proj|mlp\.(gate|up|down)_proj|mlp\.shared_experts\.(gate|up|down)_proj)'
+
+[train]
+output_dir = "outputs/runs/stage1_script"
+seed = 1234
+global_batch_size = 64      # fixed for any GPU count
+per_device_batch_size = 8   # lower if smoke S9 shows too much memory
+learning_rate = 1e-4
+weight_decay = 0.01
+warmup_ratio = 0.03
+lr_scheduler = "cosine"
+max_grad_norm = 1.0
+gradient_checkpointing = true
+logging_steps = 50
+save_steps = 1000
+eval_steps = 1000
+
+[data]
+epoch_size = 250000
+num_epochs = 2
+dev_size = 2000
+max_target_tokens = 1536   # longer targets are dropped and counted, never truncated
+num_workers = 8            # DataLoader workers per GPU
+
+# Epoch-1 curriculum: words → words + lines → everything. Later epochs mix everything.
+[[data.phases]]
+fraction = 0.333
+levels = ["word"]
+
+[[data.phases]]
+fraction = 0.333
+levels = ["word", "line"]
+
+[[data.phases]]
+fraction = 0.334
+levels = ["word", "line", "region"]
+
+# Official public sets: convert them first (configs/data.toml), then these paths exist.
+[[data.sources]]
+name = "iiit_hw_dev"
+path = "outputs/data/crops/iiit_hw_dev"
+share = 0.50
+task = "crop_ocr"
+
+[[data.sources]]
+name = "mozhi_hi"
+path = "outputs/data/crops/mozhi_hi"
+share = 0.25
+task = "crop_ocr"
+
+[[data.sources]]
+name = "golden_regions"
+path = "outputs/data/crops/golden_regions"
+share = 0.25
+task = "crop_ocr"
+
+[smoke]   # works with golden data alone, before the public sets are downloaded
+source = "golden_regions"
+samples = 8
+steps = 30
+
+[eval]
+sources = ["golden_regions", "iiit_hw_dev", "mozhi_hi"]
+limit_per_source = 2000
+max_new_tokens = 1536
+no_repeat_ngram_size = 35   # the model's own eval setting
+seed = 1234
