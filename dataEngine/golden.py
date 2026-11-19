@@ -31,13 +31,16 @@ _STATION = re.compile(r"^(?P<district>[^_]+)_(?P<station>.+)_PS_(?P<case>\d+)_(?
 _MARKER = re.compile(r"\[(?:illegible|uncertain:[^\[\]]*)\]")
 
 
-def parse_station(document_id: str) -> tuple[str, str]:
-    """Split `<District>_<Station>_PS_<case>_<yy>` into (district, station)."""
+def parse_station(document_id: str, overrides: dict[str, list[str]]) -> tuple[str, str]:
+    """(district, station) from `overrides`, else from `<District>_<Station>_PS_<case>_<yy>`."""
+    if document_id in overrides:
+        district, station = overrides[document_id]
+        return district, station
     match = _STATION.match(document_id)
     if match is None:
         raise ValueError(
             f"document id {document_id!r} does not match <District>_<Station>_PS_<case>_<yy>; "
-            "ask for a station mapping instead of guessing"
+            "add it to [golden.station_overrides] instead of guessing"
         )
     return match["district"], match["station"]
 
@@ -51,7 +54,7 @@ def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def convert_page(page_dir: Path, data_root: Path) -> PageRecord:
+def convert_page(page_dir: Path, data_root: Path, overrides: dict[str, list[str]]) -> PageRecord:
     """Join page.json, layout regions, source text and English into one PageRecord."""
     page = _read_json(page_dir / "page.json")
     layout = {
@@ -63,7 +66,7 @@ def convert_page(page_dir: Path, data_root: Path) -> PageRecord:
     }
     source_regions = _read_json(page_dir / "source_language_extraction" / "page.json")["regions"]
     width, height = page["width_px"], page["height_px"]
-    district, station = parse_station(page["document_id"])
+    district, station = parse_station(page["document_id"], overrides)
 
     blocks = []
     for region in sorted(source_regions, key=lambda r: r["reading_order"]):
@@ -156,12 +159,14 @@ def validate_page(page: PageRecord, data_root: Path) -> list[str]:
     return [f"{page.page_id}: {p}" for p in problems]
 
 
-def convert_document(doc_dir: Path, data_root: Path) -> tuple[list[PageRecord], list[str]]:
+def convert_document(
+    doc_dir: Path, data_root: Path, overrides: dict[str, list[str]]
+) -> tuple[list[PageRecord], list[str]]:
     """All pages of one document. A page that cannot be read becomes a problem, not a crash."""
     pages, problems = [], []
     for page_dir in sorted((doc_dir / "pages").iterdir()):
         try:
-            page = convert_page(page_dir, data_root)
+            page = convert_page(page_dir, data_root, overrides)
         except (KeyError, ValueError, OSError, json.JSONDecodeError) as error:
             problems.append(
                 f"{page_dir.relative_to(data_root).as_posix()}: cannot read ({error!r})"

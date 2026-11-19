@@ -60,7 +60,7 @@ The model runs **without an image** through the same model class. Smoke test S5 
 | `layers.0.mlp.{gate,up,down}_proj` | **LoRA r32** |
 | `layers.1-11.mlp.shared_experts.{gate,up,down}_proj` | **LoRA r32** |
 | `projector` | frozen (unused: no image) |
-| `sam_model`, `vision_model` / `qwen2_model` | frozen (unused) |
+| `sam_model`, `qwen2_model` | frozen (unused) |
 | routed experts, router, `embed_tokens`, `lm_head` | frozen |
 
 **Why it starts from the base model, not from `stage2`:** Stages 1–2 change the decoder through ΔA (merged). Training ΔB on the untouched base W0 keeps both changes measured from the same starting point, so Stage 4 can add them: **W0 + ΔA + λ·ΔB**. Starting from `stage2` would also work mathematically, but then this branch could not run in parallel with Stages 1–2. Parallel running is what makes the 1-month M1 possible.

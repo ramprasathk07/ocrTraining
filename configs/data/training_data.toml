@@ -1,4 +1,4 @@
-# Data engine config: python -m dataEngine --config configs/data.toml <step>
+# Data engine config: python -m dataEngine --config configs/data/training_data.toml <step>
 # Paths are relative to the repo root.
 
 seed = 1234
@@ -23,7 +23,8 @@ splits = "outputs/data/splits"
 data_root = "dataEngine/data"
 out_dir = "outputs/data/crops/golden_regions"
 
-# Official public sets (docs/training-plan.md §8) use converter = "labelled_folder".
+# Official public sets (docs/training-plan.md §8). Names must match the Stage 1 configs:
+# mozhi_hi, iiit_hw_dev, dohascript, iam_lines. Most use converter = "labelled_folder".
 # Add each one only after downloading it from the official site and reading its README:
 #
 # [[sources]]

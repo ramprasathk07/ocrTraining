@@ -1,1 +1,1 @@
-"""DeepSeek-OCR (v1, deepseek-ai/DeepSeek-OCR): input encoding, loading, generation."""
+"""DeepSeek-OCR 2 (deepseek-ai/DeepSeek-OCR-2): input encoding, loading, generation."""

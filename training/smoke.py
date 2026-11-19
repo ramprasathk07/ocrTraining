@@ -7,17 +7,18 @@ The run exits non-zero if any check fails.
 import json
 import logging
 import math
+import re
 import tempfile
 import time
 from pathlib import Path
 
 import torch
 
-from dataEngine.records import read_crops
-from dataEngine.tasks import get_task
+from dataEngine.tasks import get_task, read_split
 from models.deepseek_ocr.inputs import IGNORE_INDEX, collate, encode_sample, load_image
 from models.deepseek_ocr.loader import load_model
 from training.config import RunConfig
+from training.inventory import count_by_component
 
 log = logging.getLogger(__name__)
 
@@ -28,22 +29,30 @@ def _to_device(batch: dict, device: torch.device) -> dict:
     return moved
 
 
-def _expected_lora_params(model, r: int) -> int:
+def _expected_lora_params(model) -> int:
+    """What LoRA should add, from each module's own rank (groups can differ)."""
     return sum(
         r * (m.in_features + m.out_features)
         for _, m in model.named_modules()
         if hasattr(m, "lora_A")
+        for r in m.r.values()
     )
+
+
+def _group_of(name: str, cfg: RunConfig) -> str:
+    return next((g.pattern for g in cfg.lora.groups if re.search(g.pattern, name)), "default")
 
 
 def run_smoke(model, tokenizer, cfg: RunConfig, device: torch.device) -> dict:
     """`model` is the LoRA-wrapped model from training.__main__ (not yet on a device)."""
-    source = next(s for s in cfg.data.sources if s.name == cfg.smoke.source)
-    task = get_task(source.task)
-    records = [r for r in read_crops(source.path) if r.split == "train"]
-    samples = [task(r, source.path) for r in records[: cfg.smoke.samples]]
+    root, task = cfg.smoke.image_root, get_task(cfg.smoke.task)
+    image_cfg = cfg.smoke.image or cfg.image
+    records = read_split(task, cfg.smoke.path, "train", cfg.smoke.splits)
+    if not records:
+        raise FileNotFoundError(f"smoke source has no train records at {cfg.smoke.path}")
+    samples = [task(r, root) for r in records[: cfg.smoke.samples]]
     encoded = [
-        encode_sample(s.prompt, s.target, load_image(s.image), tokenizer, cfg.image)
+        encode_sample(s.prompt, s.target, load_image(s.image), tokenizer, image_cfg)
         for s in samples
     ]
     checks: dict[str, dict] = {}
@@ -52,13 +61,14 @@ def run_smoke(model, tokenizer, cfg: RunConfig, device: torch.device) -> dict:
     trainable = {n: p.numel() for n, p in model.named_parameters() if p.requires_grad}
     not_lora = [n for n in trainable if "lora_" not in n]
     lora_modules = sum(1 for _, m in model.named_modules() if hasattr(m, "lora_A"))
-    expected = _expected_lora_params(model, cfg.lora.r)
+    expected = _expected_lora_params(model)
     checks["S3_freeze"] = {
         "pass": lora_modules > 0 and not not_lora and sum(trainable.values()) == expected,
         "lora_modules": lora_modules,
         "trainable_params": sum(trainable.values()),
         "expected_params": expected,
         "unexpected_trainable": not_lora[:10],
+        "by_component": count_by_component(model),
     }
 
     # S4: loss positions decode to exactly target + EOS.
@@ -77,18 +87,20 @@ def run_smoke(model, tokenizer, cfg: RunConfig, device: torch.device) -> dict:
     model.train()
     batch = _to_device(collate(encoded, tokenizer.pad_token_id), device)
 
-    # S5/S6: finite loss; gradients reach LoRA.
+    # S5/S6: finite loss; gradients reach every LoRA group (the encoder group proves the
+    # model's torch.no_grad() around the vision path is disabled).
     loss = model(**batch).loss
     loss.backward()
-    with_grad = sum(
-        1
-        for n, p in model.named_parameters()
-        if p.requires_grad and p.grad is not None and p.grad.abs().sum() > 0
-    )
+    with_grad: dict[str, int] = {}
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            group = _group_of(name, cfg)
+            reached = param.grad is not None and bool(param.grad.abs().sum() > 0)
+            with_grad[group] = with_grad.get(group, 0) + reached
     checks["S5_S6_forward_backward"] = {
-        "pass": math.isfinite(loss.item()) and with_grad > 0,
+        "pass": math.isfinite(loss.item()) and all(with_grad.values()),
         "loss": loss.item(),
-        "lora_tensors_with_grad": with_grad,
+        "lora_tensors_with_grad_per_group": with_grad,
     }
 
     # S7: a few steps on the same batch must drive the loss down.
@@ -123,14 +135,14 @@ def run_smoke(model, tokenizer, cfg: RunConfig, device: torch.device) -> dict:
     }
 
     # S9: speed and peak memory on the longest samples at the configured micro-batch.
-    longest = sorted(records, key=lambda r: len(r.text), reverse=True)[
+    longest = sorted(records, key=lambda r: len(task(r, root).target), reverse=True)[
         : cfg.train.per_device_batch_size
     ]
-    long_samples = [task(r, source.path) for r in longest]
+    long_samples = [task(r, root) for r in longest]
     long_batch = _to_device(
         collate(
             [
-                encode_sample(s.prompt, s.target, load_image(s.image), tokenizer, cfg.image)
+                encode_sample(s.prompt, s.target, load_image(s.image), tokenizer, image_cfg)
                 for s in long_samples
             ],
             tokenizer.pad_token_id,

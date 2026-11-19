@@ -5,8 +5,8 @@ Turn the golden data into clean, split training records, prove the training setu
 | | |
 |---|---|
 | Week | W1 (2026-11-23 → 11-29). Dataset access requests and downloads start this week |
-| Input | `dataEngine/data/` golden pages, base checkpoints `deepseek-ai/DeepSeek-OCR` and `deepseek-ai/DeepSeek-OCR-2` |
-| Output | Page records, locked splits, smoke-test report, `baseline.json`, the v1/v2 + resolution choice, gate values |
+| Input | `dataEngine/data/` golden pages, base checkpoint `deepseek-ai/DeepSeek-OCR-2` (pinned revision) |
+| Output | Page records, locked splits, module inventory, smoke-test report, OCR-2 baseline report, image-mode choice, gate values |
 | Method | **No training** |
 | Hardware | RTX 3060 (conversion, small smoke tests), A6000 (smoke tests at full size, baselines) |
 | GPU-hours | 5–8 |
@@ -106,12 +106,12 @@ On the A6000:
 
 | # | Test | Pass condition |
 |---|---|---|
-| S1 | Load v1 and v2 | No custom-code errors |
-| S2 | Module names | `model.named_parameters()` contains every name in the [freeze matrix](../training-plan.md#6-lora-or-full-fine-tuning-what-is-frozen). Save the list |
-| S3 | Freeze check (Stage 1 setup) | Trainable = LoRA only: 3,978,240 parameters at r16. Nothing else has `requires_grad` |
+| S1 | Load OCR-2 | No custom-code errors |
+| S2 | Module names | `python -m training.inventory --config configs/stage1/1a_printed.toml` lists every component of the [freeze matrix](../training-plan.md#6-lora-or-full-fine-tuning-what-is-frozen) (no weights needed) |
+| S3 | Freeze check (Stage 1 setup) | Trainable = LoRA only: 3,047,424 parameters (encoder 1,081,344 at r8 + decoder 1,966,080 at r16). Nothing else has `requires_grad` |
 | S4 | Label masking | Decoding the tokens whose label ≠ -100 gives exactly the target text + end token |
 | S5 | Forward | Finite loss on 1 crop, 1 full page and 1 text-only sample (via the model's no-image path; confirm how its code handles missing images) |
-| S6 | Backward | Non-zero gradients on LoRA, none anywhere else |
+| S6 | Backward | Non-zero gradients in **every** LoRA group, including DeepEncoder V2 (proves the official `no_grad` around the vision path is disabled) |
 | S7 | Overfit | 8 samples × ~50 steps: loss falls close to 0 |
 | S8 | Save/reload | The reloaded checkpoint gives the same loss on the same batch |
 | S9 | Speed + memory | tokens/s and peak GPU memory for: crop micro-batch 16, page micro-batch 1, text micro-batch 16. **Recompute every stage's GPU-hours from these numbers** |
@@ -121,15 +121,15 @@ On the A6000:
 
 | Run | Data | Prompt | Measures |
 |---|---|---|---|
-| B1 | dev region crops | `<image>\nFree OCR.` | CER/WER per script |
-| B2 | dev pages, v1 Base vs Gundam, v2 default | `<image>\n<|grounding|>Convert the document to markdown.` | page CER, block F1@0.5 (**class-agnostic**: the base model uses its own labels), Kendall τ, parse rate, seconds/page |
+| B0 | `dataEngine/data/test_data`: 200 printed words, 200 FIR regions, 49 FIR pages | Free OCR (crops), grounding page parse (pages) | `python -m evaluation --config configs/eval/test_data.toml --split test --checkpoint start`: printed CER, region CER, page CER, layout AP/mAP@50, box IoU, block F1, reading order, valid output ([plan §9](../training-plan.md#9-evaluation-and-gates)) |
+| B1 | dev crops of every converted Stage 1 source | `<image>\nFree OCR.` | `python -m evaluation --config configs/stage1/1a_printed.toml --checkpoint start`: CER/WER per source, script, language. Run once with `image_size = 768` and once with `1024` |
+| B2 | dev pages, tile mode (OCR-2 default) | `<image>\n<|grounding|>Convert the document to markdown.` | page CER, block F1@0.5 (**class-agnostic**: the base model uses its own labels), Kendall τ, parse rate, seconds/page |
 | B3 | Mozhi Hindi test lines | Free OCR | CER |
 | B4 | dev hi→en region pairs + FLORES-200 devtest hi→en | IndicTrans2 (indic-en 1B) | chrF++, COMET, number preservation (the translation bar for Stage 3) |
 
-**Decision rule for model and resolution** (dev only):
-1. Lowest handwritten-Hindi CER.
-2. If tied: better Kendall τ.
-3. If still tied: v1, because more community fine-tunes exist.
+**Decision rule for the 1A/1B image mode** (dev only):
+1. Use the 768 view unless the 1024 view lowers handwritten-Hindi CER by more than 1 point.
+2. 768 is about half the image positions, so it trains faster.
 
 For the M1/M2 comparison, also run the chosen configuration once on **test**. That is a fixed reference and does not tune anything.
 
@@ -143,14 +143,14 @@ Turn the proposed gates in [training-plan.md §9](../training-plan.md#9-evaluati
 - [ ] All validation checks pass, or every failure is listed and accepted by the user.
 - [ ] Splits written, hashed and locked. No police station appears in two splits.
 - [ ] Smoke tests S1–S9 green (S10 decides where Stage 3 runs).
-- [ ] `baseline.json` written. Model version, resolution mode and gate values recorded in Decisions.
+- [ ] OCR-2 baseline report written (`report/stage1a_printed/report_dev.md`). Image mode and gate values recorded in Decisions.
 
 ## 3. Risks and fallbacks
 
 | Risk | Fallback |
 |---|---|
 | `document_id` does not encode the police station for some files | Ask the user for a mapping. Do not guess |
-| v2 custom code fails under the pinned stack | Use v1. The plan is identical except for the vision module names |
+| OCR-2 custom code fails under the pinned stack | Check `transformers==4.46.3` and the pinned revision first. v1 input encoding is in git history (commit 5172b2d) as a last resort |
 | HF Trainer + PEFT is too slow | Try Unsloth's upload (decoder LoRA only) on the same data |
 | Measured speed is far below the estimates | Shrink the Stage 1 epoch size first (it is the largest), then follow the cut list |
 

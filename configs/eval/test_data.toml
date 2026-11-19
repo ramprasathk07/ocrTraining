@@ -1,0 +1,86 @@
+# Check a checkpoint on the test data before (and after) training. Convert first: configs/data/test_data.toml
+#   torchrun --nproc_per_node=N -m evaluation --config configs/eval/test_data.toml --split test --checkpoint start
+#   ... --checkpoint start --checkpoint outputs/runs/stage1a_printed/merged     # before vs after
+
+name = "eval_test_data"
+
+[model]   # start: the original DeepSeek-OCR 2
+name_or_path = "deepseek-ai/DeepSeek-OCR-2"
+revision = "aaa02f3811945a91062062994c5c4a3f4c0af2b0"
+attn_implementation = "eager"   # works everywhere (Windows has no flash-attn); generation speed is similar
+
+[image]   # default for sources without their own: one 768 view (Stage 1A/1B training mode)
+base_size = 1024
+image_size = 768
+crop_mode = false
+
+[eval]
+output_dir = "outputs/eval/test_data"   # predictions (raw FIR text): private, git-ignored
+report_dir = "report/test_data"        # report_<split>.md / .json
+prompts_dir = "report/prompts/eval"   # eval prompt registry + leaderboard
+no_repeat_ngram_size = 35   # the model's own eval setting
+seed = 1234
+
+[[eval.sources]]   # printed line CER (the set has words only)
+name = "printed_words"
+task = "crop_ocr"
+path = "outputs/data/test/crops/printed_words"
+limit = 200
+max_new_tokens = 128
+
+[[eval.sources]]   # same 200 words in a padded 1024 view: decides the 1A image mode (Stage 0)
+name = "printed_words_1024"
+task = "crop_ocr"
+path = "outputs/data/test/crops/printed_words"
+limit = 200
+max_new_tokens = 128
+image = { base_size = 1024, image_size = 1024, crop_mode = false }
+
+[[eval.sources]]   # FIR region reading; regions are paragraph-sized, so tiles
+name = "golden_regions"
+task = "crop_ocr"
+path = "outputs/data/test/crops/golden_regions"
+limit = 200
+max_new_tokens = 1536
+image = { base_size = 1024, image_size = 768, crop_mode = true }
+
+[[eval.sources]]   # page CER, layout AP, box IoU, reading order, valid output: all 49 pages
+name = "golden_pages"
+task = "page_parse"
+path = "outputs/data/test/golden/pages.jsonl"
+root = "dataEngine/data/test_data/src_golden"
+splits = "outputs/data/test/splits"
+limit = 200
+max_new_tokens = 4096
+image = { base_size = 1024, image_size = 768, crop_mode = true }
+
+# Targets from the plan. The untrained model is expected to miss most; the report shows how far.
+[[eval.gates]]   # Stage 1: printed line CER ≤ 3%
+group = "source=printed_words"
+metric = "cer"
+max_value = 0.03
+
+[[eval.gates]]   # Stage 2: government page CER ≤ 5%
+group = "source=golden_pages"
+metric = "page_cer"
+max_value = 0.05
+
+[[eval.gates]]   # Stage 2: layout mAP@50 ≥ 0.85 (class-aware; the base model uses its own labels)
+group = "source=golden_pages"
+metric = "layout_map50"
+min_value = 0.85
+
+[[eval.gates]]   # Stage 2: bounding-box IoU ≥ 0.80
+group = "source=golden_pages"
+metric = "mean_iou"
+min_value = 0.80
+
+[[eval.gates]]   # Stage 2: reading-order accuracy ≥ 0.90
+group = "source=golden_pages"
+metric = "reading_order"
+min_value = 0.90
+
+[[eval.gates]]   # Stage 2: valid structured output ≥ 98%
+group = "source=golden_pages"
+metric = "valid_output"
+min_value = 0.98

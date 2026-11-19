@@ -1,11 +1,13 @@
 """Training entry point. The same command runs on 1 or N GPUs:
 
-    torchrun --nproc_per_node=N -m training --config configs/stage1_script.toml
-    torchrun --nproc_per_node=1 -m training --config configs/stage1_script.toml --smoke
+    torchrun --nproc_per_node=N -m training --config configs/stage1/1a_printed.toml
+    torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --smoke
+    python -m training --config configs/stage1/1a_printed.toml --merge <checkpoint dir>
 
 The config fixes the global batch; gradient accumulation is derived from the GPU count.
 Outputs in [train].output_dir: checkpoints, TensorBoard logs, run_manifest.json,
 adapter/ (LoRA weights) and merged/ (base + LoRA, the next stage's input).
+--merge turns any saved checkpoint (e.g. the best one by dev CER) into <checkpoint>/merged.
 """
 
 import argparse
@@ -21,8 +23,6 @@ from pathlib import Path
 import peft
 import torch
 import transformers
-from peft import LoraConfig as PeftLoraConfig
-from peft import get_peft_model
 from torch.utils.data import SequentialSampler
 from transformers import Trainer, TrainingArguments, set_seed
 
@@ -30,6 +30,8 @@ from models.deepseek_ocr.inputs import collate
 from models.deepseek_ocr.loader import load_model, load_tokenizer
 from training.config import RunConfig, grad_accum_steps, load_config
 from training.data import build_datasets
+from training.lora import apply_lora, build_optimizer
+from training.prompts import register_training_run, training_prompts
 from training.smoke import run_smoke, write_report
 
 log = logging.getLogger("training")
@@ -44,21 +46,6 @@ class PlannedOrderTrainer(Trainer):
 
     def _get_train_sampler(self) -> SequentialSampler:
         return SequentialSampler(self.train_dataset)
-
-
-def apply_lora(model, cfg: RunConfig):
-    """LoRA on `lora.target_modules`; PEFT freezes all other weights (vision, projector, router)."""
-    lora = cfg.lora
-    return get_peft_model(
-        model,
-        PeftLoraConfig(
-            r=lora.r,
-            lora_alpha=lora.alpha,
-            lora_dropout=lora.dropout,
-            target_modules=lora.target_modules,
-            bias="none",
-        ),
-    )
 
 
 def _code_version() -> str:
@@ -79,7 +66,9 @@ def _write_manifest(cfg: RunConfig, world_size: int, accum: int, data_stats: dic
             "gradient_accumulation_steps": accum,
             "global_batch_size": cfg.train.global_batch_size,
         },
+        "stage": {"id": cfg.stage.id, "starts_from": cfg.stage.starts_from},
         "data": data_stats,
+        "prompts": training_prompts(cfg),  # evaluation warns when scored with other prompts
         "code_version": _code_version(),
         "versions": {
             "python": platform.python_version(),
@@ -95,7 +84,7 @@ def _write_manifest(cfg: RunConfig, world_size: int, accum: int, data_stats: dic
     )
 
 
-def train(cfg: RunConfig) -> None:
+def train(cfg: RunConfig, config_path: Path) -> None:
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     accum = grad_accum_steps(
         cfg.train.global_batch_size, cfg.train.per_device_batch_size, world_size
@@ -138,9 +127,11 @@ def train(cfg: RunConfig) -> None:
         train_dataset=train_ds,
         eval_dataset=dev_ds,
         data_collator=partial(collate, pad_id=tokenizer.pad_token_id),
+        optimizers=(build_optimizer(model, cfg), None),  # per-group LRs; Trainer adds the schedule
     )
     if trainer.is_world_process_zero():
         _write_manifest(cfg, world_size, accum, data_stats)
+        register_training_run(cfg, config_path)
     trainer.train()
 
     trainer.save_model(str(cfg.train.output_dir / "adapter"))
@@ -149,6 +140,14 @@ def train(cfg: RunConfig) -> None:
         merged.save_pretrained(cfg.train.output_dir / "merged", safe_serialization=True)
         tokenizer.save_pretrained(cfg.train.output_dir / "merged")
         log.info("saved adapter/ and merged/ in %s", cfg.train.output_dir)
+
+
+def merge(cfg: RunConfig, checkpoint: Path) -> None:
+    """Base model (cfg.model) + the checkpoint's adapter → <checkpoint>/merged."""
+    merged = load_model(cfg.model, adapter=checkpoint).merge_and_unload()
+    merged.save_pretrained(checkpoint / "merged", safe_serialization=True)
+    load_tokenizer(cfg.model).save_pretrained(checkpoint / "merged")
+    log.info("merged %s -> %s", checkpoint, checkpoint / "merged")
 
 
 def smoke(cfg: RunConfig) -> None:
@@ -165,6 +164,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m training")
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true", help="run the Stage 0 smoke tests and exit")
+    parser.add_argument("--merge", type=Path, help="merge this checkpoint's adapter and exit")
     args = parser.parse_args()
     rank = int(os.environ.get("RANK", 0))
     logging.basicConfig(
@@ -175,8 +175,10 @@ def main() -> None:
     set_seed(cfg.train.seed)
     if args.smoke:
         smoke(cfg)
+    elif args.merge:
+        merge(cfg, args.merge)
     else:
-        train(cfg)
+        train(cfg, args.config)
 
 
 if __name__ == "__main__":

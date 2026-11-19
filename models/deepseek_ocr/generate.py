@@ -16,10 +16,11 @@ def generate_text(
     cfg: ImageConfig,
     max_new_tokens: int,
     no_repeat_ngram_size: int,
-) -> str:
-    """Model output for `prompt` + `image`, decoded with special tokens kept.
+) -> tuple[str, bool]:
+    """(text, finished): the output for `prompt` + `image`, and whether it ended on EOS.
 
     Special tokens are kept because grounding tags (<|ref|>, <|det|>) are special tokens.
+    `finished` is false when generation hit `max_new_tokens` (a truncated output).
     """
     # shortcut: one sample per call (no left-padded batching); batch it if evaluation is too slow.
     device = next(model.parameters()).device
@@ -39,9 +40,9 @@ def generate_text(
             no_repeat_ngram_size=no_repeat_ngram_size,
             use_cache=True,
         )
+    new_tokens = output[0, input_ids.shape[1] :]
+    finished = bool(len(new_tokens)) and int(new_tokens[-1]) == EOS_ID
     text = tokenizer.decode(
-        output[0, input_ids.shape[1] :],
-        skip_special_tokens=False,
-        clean_up_tokenization_spaces=False,
+        new_tokens, skip_special_tokens=False, clean_up_tokenization_spaces=False
     )
-    return text.removesuffix(tokenizer.eos_token).strip()
+    return text.removesuffix(tokenizer.eos_token).strip(), finished

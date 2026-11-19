@@ -1,15 +1,35 @@
-"""Load DeepSeek-OCR (official code, pinned revision) and, optionally, a LoRA adapter."""
+"""Load DeepSeek-OCR 2 (official code, pinned revision) and, optionally, a LoRA adapter."""
 
+import contextlib
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 
-# The model code maps only these two (as "mha_eager" / "mha_flash_attention_2"); "sdpa" would crash.
+# Decoder attention: the model code maps only these two ("mha_eager" / "mha_flash_attention_2").
+# DeepEncoder V2 always uses sdpa internally.
 ATTENTION_IMPLEMENTATIONS = ("eager", "flash_attention_2")
-SUPPORTED_VISION = (
-    "deeplip_b_l"  # v1: SAM + CLIP-L. OCR-2 ("deepencoderv2") needs its own input encoder.
-)
+SUPPORTED_VISION = "deepencoderv2"  # OCR-2: SAM tokenizer + Qwen2-based DeepEncoder V2
+
+
+class _TorchWithoutNoGrad:
+    """`torch` as the model's own module sees it, except that `no_grad` does nothing.
+
+    The official forward runs SAM, DeepEncoder V2 and the projector inside torch.no_grad(),
+    which cuts every gradient to encoder LoRA. Without it, frozen parts still record no graph,
+    because nothing in them requires a gradient. Inference stays under torch.inference_mode().
+    """
+
+    no_grad = staticmethod(contextlib.nullcontext)
+
+    def __getattr__(self, name: str):
+        return getattr(torch, name)
+
+
+def allow_vision_gradients(model) -> None:
+    """Let gradients flow through the vision path of a loaded model (see _TorchWithoutNoGrad)."""
+    sys.modules[type(model.model).__module__].torch = _TorchWithoutNoGrad()
 
 
 @dataclass(frozen=True)
@@ -51,9 +71,10 @@ def load_model(cfg: ModelConfig, adapter: Path | None = None):
     )
     if vision_name != SUPPORTED_VISION:
         raise NotImplementedError(
-            f"vision encoder {vision_name!r}: only the DeepSeek-OCR v1 ({SUPPORTED_VISION}) "
+            f"vision encoder {vision_name!r}: only the DeepSeek-OCR 2 ({SUPPORTED_VISION}) "
             "input encoding exists"
         )
+    allow_vision_gradients(model)
     if adapter is not None:
         from peft import PeftModel
 

@@ -31,14 +31,15 @@ Detail lives in the stage docs. This page summarizes and links.
 
 | Decision | Answer | Source |
 |---|---|---|
-| Base model | DeepSeek-OCR 3B family. The Stage 0 baseline chooses between v1 (Oct 2025, MIT) and OCR-2 (Jan 2026, Apache-2.0). Both share the decoder design and the tokenizer | Chat + this review |
+| Base model | **DeepSeek-OCR 2** (3B, Jan 2026, Apache-2.0), pinned revision `aaa02f38…`. Replaces the earlier v1-vs-OCR-2 baseline choice | You, 2026-11-19 |
+| Stage 1 structure | **1A printed → 1B handwritten (separate adapter) → 1C joint** with the golden regions; each starts from the previous merged checkpoint | You, 2026-11-19 |
 | Languages (V1) | **Hindi + English only.** English appears inside FIRs and is the translation target. **Marathi moves to V2** | You, 2026-11-18 |
 | Time box | First results in 1 month (M1, 2026-12-20). Done in at most 2 months (M2, 2027-01-17) | You, 2026-11-18 |
 | Domain | Police FIRs and complaint letters (Bihar, Hindi) | Data scan |
 | Golden data | ~3K pages, **fully human-checked**, used as ground truth. Marathi pages are set aside for V2 | You |
 | Licence use | **Research / internal only**, so academic-licence datasets are allowed | You |
 | V1 output | Grounded bilingual blocks. **No key-value field extraction in V1** | You |
-| Training method | LoRA on the decoder in every stage. `projector` and vision encoder frozen: the official code runs them without gradients, and Stage 1b adds a small patch only if needed. No full fine-tune of the whole model. Tokenizer unchanged | This plan (section 6), 2026-11-18 |
+| Training method | LoRA in every stage. Stage 1: DeepEncoder V2 attention (r8) + decoder attention (r16); SAM, convs, projector, experts, router, embeddings frozen. No full fine-tune of the whole model. Tokenizer unchanged | You, 2026-11-19 (section 6) |
 | Training code | HF Trainer + PEFT on the official, pinned checkpoint. Runs on 1→N GPUs. Unsloth only if measured speed is too low | You, 2026-11-18 |
 | GPUs | RTX A6000 48GB is primary. MI300X 192GB only after a ROCm smoke test. The local RTX 3060 12GB is for data work and smoke tests | Chat + this machine |
 | RL / preference tuning | Not in V1 | Chat |
@@ -90,26 +91,24 @@ A sample of 4 documents, 13 pages and 134 regions was scanned in `dataEngine/dat
 
 ### 3.2 The model
 
-All names below were read from the Hugging Face config and modeling code.
+DeepSeek-OCR 2. Names and counts come from `python -m training.inventory`, which builds the real model structure without weights.
 
 ```
 page image
-  └─ vision encoder ─────────────────────────────────────────────┐
-       v1: sam_model (SAM ViT-B, ~80M; contains the 16x conv       │
-           compressor net_2/net_3) → vision_model (CLIP-L, 24      │
-           blocks, ~300M)                                          │
-       v2: sam_model → qwen2_model (Qwen2-0.5B-style, 24 layers)   │
-  └─ projector: ONE Linear layer (v1 2048→1280, v2 896→1280) ──────┤
-                                                                   ▼
-decoder "DeepseekV2" (identical config in v1 and v2)
-  12 layers, hidden 1280, 10 heads, plain multi-head attention
-  self_attn.{q,k,v,o}_proj in every layer
-  layer 0:      dense MLP  mlp.{gate,up,down}_proj
-  layers 1–11:  MoE  mlp.experts.0..63.{gate,up,down}_proj   (64 routed, 6 used per token)
-                     mlp.shared_experts.{gate,up,down}_proj  (2 shared, every token)
-                     mlp.gate                                (router)
-  embed_tokens, lm_head (vocab 129,280), max positions 8,192 (vision + text together)
-≈2.93B parameters in total, ≈570M used per token
+  └─ visual tokenizer: model.sam_model (SAM ViT-B + conv downsampler net_2/net_3)     95.0M
+  └─ DeepEncoder V2:   model.qwen2_model (Qwen2, 24 layers, hidden 896)              358.3M
+                       attention: qwen2_model.model.model.layers.N.self_attn.{q,k,v,o}_proj
+                       learned queries only for 768 (144) and 1024 (256) inputs
+  └─ projector:        model.projector (one Linear 896→1280)                           1.1M
+                                                                                       ▼
+decoder "DeepseekV2": 12 layers, hidden 1280, 10 heads, plain multi-head attention
+  model.layers.N.self_attn.{q,k,v,o}_proj                                             78.6M
+  layer 0:     dense MLP  mlp.{gate,up,down}_proj                                     26.3M
+  layers 1–11: mlp.experts.0..63.*  (64 routed, 6 used per token)                  2,422.2M
+               mlp.shared_experts.* (2 shared, every token)                           75.7M
+               mlp.gate             (router)                                           0.9M
+  embed_tokens, lm_head (vocab 129,280; 165.5M each), max positions 8,192 (vision + text)
+3.39B parameters in total
 ```
 
 - **Box format:** `<|ref|>label<|/ref|><|det|>[[x1, y1, x2, y2]]<|/det|>`, with coordinates scaled to **0–999**.
@@ -117,14 +116,11 @@ decoder "DeepseekV2" (identical config in v1 and v2)
 
 **Vision tokens per image:**
 
-| Version | Mode | Tokens |
+| Mode | What the model sees | Image-token positions |
 |---|---|---|
-| v1 | Tiny 512 | 64 |
-| v1 | Small 640 | 100 |
-| v1 | Base 1024 | 256 |
-| v1 | Large 1280 | 400 |
-| v1 | Gundam (640 tiles + 1024 global) | n×100 + 256 |
-| v2 | default | (0–6)×144 + 256 |
+| one 768 view (`crop_mode = false`) | image stretched to 768×768 | 145 |
+| one 1024 view (`crop_mode = false`) | image padded to 1024 | 257 |
+| tiles (`crop_mode = true`, the model's default) | 1024 global view + 2–6 tiles of 768 for images larger than 768 | 257 + 144 per tile |
 
 ### 3.3 Tokenizer
 
@@ -148,7 +144,7 @@ Full numbers, including Marathi for V2, are in [tokenizer-check.md](tokenizer-ch
 
 [Unsloth](https://unsloth.ai/docs/models/tutorials/deepseek-ocr-how-to-run-and-fine-tune) also supports DeepSeek-OCR and [OCR-2](https://unsloth.ai/docs/models/deepseek-ocr-2). Its Persian example cut CER from 149% to about 60% with decoder LoRA only. It stays a fallback in case measured speed is too low.
 
-- **Important:** the official `forward` (and Unsloth's copy) runs the vision encoder **and `projector`** inside `torch.no_grad()`. Without a code patch only the decoder can learn, so V1 trains decoder LoRA only.
+- **Important:** the official `forward` runs SAM, DeepEncoder V2 **and `projector`** inside `torch.no_grad()`, which would give encoder LoRA zero gradient. `models/deepseek_ocr/loader.py` disables that `no_grad`; frozen parts still build no graph. Smoke test S6 checks that every LoRA group gets gradients.
 - **Official pinned stack:** Python 3.12.9, torch 2.6.0, transformers 4.46.3, flash-attn 2.7.3, CUDA 11.8.
 
 ## 4. Review of the ChatGPT plan
@@ -176,7 +172,7 @@ Full numbers, including Marathi for V2, are in [tokenizer-check.md](tokenizer-ch
 | 6 | JSON output, boxes 0–1000 | Native grounding format, **boxes 0–999** (section 7). The grounding tags are single special tokens | Model code + tokenizer test |
 | 7 | Weighted multi-task loss (λ = 0.40/0.25/…) | One next-token loss. **Task balance comes from sampling shares** | Every task is next-token prediction, so loss weights add tuning work without adding control |
 | 8 | (not covered) | Vision and text tokens share 8,192 positions. Measured: your pages need 1,420 output tokens on average and at most 2,145 in bilingual form | Tokenizer test on golden data |
-| 9 | DeepSeek-OCR v1 only | **OCR-2 exists** (Jan 2026): same decoder and tokenizer, newer encoder, better reading order on its benchmark. The Stage 0 baseline picks one | HF model cards |
+| 9 | DeepSeek-OCR v1 | **Switched to DeepSeek-OCR 2** (Jan 2026): same decoder and tokenizer, Qwen2-based DeepEncoder V2, better reading order on its benchmark | You, 2026-11-19 |
 | 10 | Split by document | **Split by police station**, falling back to by document | One officer writes many FIRs. A page-level split leaks their handwriting into test |
 | 11 | Feed detected boxes as hints 50% of the time, 20% of them corrupted | **Deferred.** The V1 model detects layout itself | Simpler: one model does the job |
 | 12 | Separate translation branch via adapter routing, merge, or full transfer | **Merge with strength λ, gated against a simpler control** (Stage 4). Keeping the branch as a separate frozen adapter equals a merge at λ=1 | Same result, less machinery |
@@ -191,7 +187,7 @@ Full numbers, including Marathi for V2, are in [tokenizer-check.md](tokenizer-ch
 ```
 Stage 0  data + baseline (no training)
    │
-   ├──► Stage 1  read Devanagari (crops) ──► [Stage 1b only if the handwriting gate fails]
+   ├──► Stage 1  read Devanagari (crops): 1A printed → 1B handwritten → 1C joint
    │        │
    │        ▼
    │    Stage 2  understand FIR pages ──────────┐      ◄── M1 result (week 4)
@@ -210,55 +206,49 @@ There is one training entry point, with one config per stage.
 
 | # | Stage | Full or LoRA | Trains | Main data | Output | A6000 h* |
 |---|---|---|---|---|---|---|
-| 0 | [Data + baseline](stages/stage-0-data-and-baseline.md) | none | — | golden pages, public test sets | splits, `baseline.json`, v1/v2 choice | 5–8 |
-| 1 | [Script adaptation](stages/stage-1-script-adaptation.md) | LoRA r16 | attention, dense MLP, shared experts | Hindi word/line/region crops, printed + handwritten | `stage1` | 15–30 |
-| 1b | (conditional) visual unfreeze | + **full** last 4 vision blocks + `projector` (needs a small forward patch) | as Stage 1 + last 4 CLIP-L / Qwen2-encoder blocks + projector | as Stage 1 | `stage1b` | +10–20 |
+| 0 | [Data + baseline](stages/stage-0-data-and-baseline.md) | none | — | golden pages, public test sets | splits, OCR-2 baseline report | 5–8 |
+| 1 | [Script adaptation](stages/stage-1-script-adaptation.md) (1A, 1B, 1C) | LoRA r8 encoder + r16 decoder | DeepEncoder V2 attention + decoder attention | 1A printed Hindi · 1B handwritten Hindi + English · 1C joint + golden regions | `stage1a/1b/1c …/merged` | 25–48 |
 | 2 | [Document understanding](stages/stage-2-document-understanding.md) | LoRA r16 | as Stage 1 | full pages, regions, IndicDLP layout | `stage2` → **M1** | 15–30 |
 | 3 | [Language branch](stages/stage-3-language-branch.md) | LoRA r32, decoder only | attention, dense MLP, shared experts | Sangraha-hi, BPCC hi↔en, your hi→en pairs | `lang_adapter` | 10–25 |
 | 4 | [Joint OCR + translation](stages/stage-4-joint-ocr-translation.md) | merge experiment, then LoRA r32 | attention, dense MLP, shared experts | bilingual pages + replay | `hindidoc-v0.1` | 15–30 |
 | 5 | [Release check](stages/stage-5-release.md) | none | — | locked test set | **M2** report | 3–6 |
 
-\* Planning ranges. They are recomputed from the tokens/second measured in Stage 0. Total ≈ **63–129 A6000 hours** (+10–20 if Stage 1b runs), about a quarter of the A6000's time over 8 weeks.
+\* Planning ranges. They are recomputed from the tokens/second measured in Stage 0. Total ≈ **73–147 A6000 hours**, about a third of the A6000's time over 8 weeks.
 
-**The real bottleneck is engineering time, not GPU time.** No pipeline code exists yet. That is why the plan uses Unsloth, keeps one training entry point, and has a cut list (section 11).
+**The real bottleneck is engineering time, not GPU time.** That is why the plan keeps one training entry point, measures speed first, and has a cut list (section 11).
 
 ## 6. LoRA or full fine-tuning? What is frozen?
 
-**Answer: LoRA for the decoder in every stage. Full training only in Stage 1b, and only if needed.**
+**Answer: LoRA in every stage, and no full fine-tuning in V1 by default.**
 
-**Fully trained in Stage 1b** (only if handwriting still fails after Stage 1):
-- the last 4 vision encoder blocks (≈48M parameters)
-- `projector` (≈2.6M parameters in v1), the bridge from vision to language
-
-Both need a small patch. The official `forward` runs the whole vision path, `projector` included, under `torch.no_grad()`, so without it they cannot learn.
+- Stage 1 trains LoRA on DeepEncoder V2 attention (r8) and decoder attention (r16): 3,047,424 parameters.
+- The official forward computes the vision path under `torch.no_grad()`. The loader disables that, so encoder LoRA really trains (section 3.4).
 
 **Why not full fine-tune the whole model in V1:**
-- *Memory:* 2.93B parameters × ~16 bytes (weights + gradients + Adam states) ≈ 47GB before activations. That does not fit on the A6000.
+- *Memory:* 3.39B parameters × ~16 bytes (weights + gradients + Adam states) ≈ 54GB before activations. That does not fit on the A6000.
 - *Overfitting:* 3K pages is far too little data to move 3B weights safely.
 - *Merging:* the Stage 3 branch must merge back. LoRA updates add cleanly; full updates do not.
 
-**If the model needs more capacity, add in this order:**
-1. LoRA on the routed experts (if it underfits).
-2. Stage 1b vision blocks (if visual errors dominate).
-3. A SAM unfreeze experiment (V2).
+**Follow-up experiments if Stage 1 needs more capacity** (one at a time, see [Stage 1 §7](stages/stage-1-script-adaptation.md#7-follow-up-experiments-only-after-the-first-baseline)):
+1. LoRA on the decoder's MoE expert projections.
+2. Unfreeze the last 2–4 DeepEncoder V2 blocks at a small learning rate (if handwriting plateaus).
+3. Make the conv downsampler (`net_2`, `net_3`) trainable; then, selectively, the last SAM layers. Never the whole SAM.
 
-| Module (exact name) | St 1 | St 1b | St 2 | St 3 | St 4 |
-|---|---|---|---|---|---|
-| `sam_model` (incl. `net_2`, `net_3` compressor) | frozen | frozen | frozen | frozen | frozen |
-| `vision_model` (v1 CLIP-L) / `qwen2_model` (v2) | frozen | **last 4 blocks full** | frozen† | not used | frozen† |
-| `projector` | frozen‡ | **full** | frozen† | frozen | frozen† |
-| `image_newline`, `view_seperator` | frozen | frozen | frozen | not used | frozen |
-| `layers.*.self_attn.{q,k,v,o}_proj` | LoRA r16 | LoRA r16 | LoRA r16 | LoRA r32 | LoRA r32 |
-| `layers.0.mlp.{gate,up,down}_proj` (dense) | LoRA r16 | LoRA r16 | LoRA r16 | LoRA r32 | LoRA r32 |
-| `layers.1-11.mlp.shared_experts.*` | LoRA r16 | LoRA r16 | LoRA r16 | LoRA r32 | LoRA r32 |
-| `layers.1-11.mlp.experts.*` (64 routed) | frozen | frozen | frozen | frozen | frozen |
-| `layers.1-11.mlp.gate` (router) | frozen | frozen | frozen | frozen | frozen |
-| `embed_tokens`, `lm_head` | frozen | frozen | frozen | frozen | frozen |
+| Module (exact name) | St 1 (1A/1B/1C) | St 2 | St 3 | St 4 |
+|---|---|---|---|---|
+| `sam_model` (incl. `net_2`, `net_3` downsampler) | frozen | frozen | not used | frozen |
+| `qwen2_model…layers.N.self_attn.{q,k,v,o}_proj` (DeepEncoder V2) | **LoRA r8** | frozen† | not used | frozen† |
+| rest of `qwen2_model`, `projector`, `view_seperator` | frozen | frozen | not used | frozen |
+| `model.layers.N.self_attn.{q,k,v,o}_proj` (decoder) | **LoRA r16** | LoRA r16 | LoRA r32 | LoRA r32 |
+| `model.layers.0.mlp.{gate,up,down}_proj` (dense) | frozen | LoRA r16 | LoRA r32 | LoRA r32 |
+| `model.layers.1-11.mlp.shared_experts.*` | frozen | LoRA r16 | LoRA r32 | LoRA r32 |
+| `model.layers.1-11.mlp.experts.*` (64 routed) | frozen (follow-up 1) | frozen | frozen | frozen |
+| `model.layers.1-11.mlp.gate` (router) | frozen | frozen | frozen | frozen |
+| `embed_tokens`, `lm_head` | frozen | frozen | frozen | frozen |
 
-† If Stage 1b ran, those 4 blocks and `projector` are already merged into the checkpoint and stay frozen afterwards.
-‡ The official code computes it without gradients. Stage 1b patches that.
+† Stage 1's encoder LoRA is merged into the weights. Whether Stages 2 and 4 also adapt the encoder is decided from the Stage 1 results.
 
-Module paths follow the model code. Stage 0 confirms them from `model.named_parameters()` before any run.
+`python -m training.inventory --config <run>` prints exactly what a config will train, before any GPU time.
 
 ## 7. Model input and output format
 
@@ -318,9 +308,10 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 | Dataset | Content | Kind | Size (approx.) | Licence | Stage | Pri | Link |
 |---|---|---|---|---|---|---|---|
 | **Golden FIR pages** (yours) | Pages with boxes, labels, text, English | handwritten + printed forms | ~3K pages, ~10 regions/page | private | 0–5 | P1 | `dataEngine/data/` |
-| IIIT-HW-Dev (= Hindi part of IIIT-INDIC-HW-WORDS; a third-party copy has exactly these split sizes, so it is one dataset, not two) | Handwritten Hindi words | handwritten | ~95K words (69,853 / 12,708 / 12,869) | CC BY 4.0 (ilocr) | 1 | P1 | [CVIT (official)](https://cvit.iiit.ac.in/research/projects/cvit-projects/indic-hw-data), [ilocr](https://ilocr.iiit.ac.in/dataset/) |
-| DohaScript | Continuous handwritten Hindi, 531 writers (lines) | handwritten | 531 pages (full set from the authors; 200-sample preview on their HF repo) | "other" on HF, check | 1 | P1 | [arXiv 2602.18089](https://arxiv.org/abs/2602.18089), [authors' HF](https://huggingface.co/datasets/SIR-Lab/DohaScript) |
-| Mozhi (Hindi) | Printed words + lines, official splits | printed | ~80K train words, lines 80/10/10 | check | 1, eval | P1 | [cvit](https://cvit.iiit.ac.in/usodi/tdocrmil.php), [portal](https://ilocr.iiit.ac.in/dataset/) |
+| IIIT-HW-Dev (= Hindi part of IIIT-INDIC-HW-WORDS; a third-party copy has exactly these split sizes, so it is one dataset, not two) | Handwritten Hindi words | handwritten | ~95K words (69,853 / 12,708 / 12,869) | CC BY 4.0 (ilocr) | 1B, 1C | P1 | [CVIT (official)](https://cvit.iiit.ac.in/research/projects/cvit-projects/indic-hw-data), [ilocr](https://ilocr.iiit.ac.in/dataset/) |
+| DohaScript | Continuous handwritten Hindi, 531 writers (lines) | handwritten | 531 pages (full set from the authors; 200-sample preview on their HF repo) | "other" on HF, check | 1B, 1C | P1 | [arXiv 2602.18089](https://arxiv.org/abs/2602.18089), [authors' HF](https://huggingface.co/datasets/SIR-Lab/DohaScript) |
+| IAM Handwriting (lines) | Handwritten English lines, ~650 writers | handwritten | ~13K lines | research licence, registration | 1B, 1C | P1 | [FKI group (official)](https://fki.tic.heia-fr.ch/databases/iam-handwriting-database) |
+| Mozhi (Hindi) | Printed words + lines, official splits | printed | ~80K train words, lines 80/10/10 | check | 1A, 1C, eval | P1 | [cvit](https://cvit.iiit.ac.in/usodi/tdocrmil.php), [portal](https://ilocr.iiit.ac.in/dataset/) |
 | ICDAR 2024 HWD | Handwritten Hindi pages, word boxes + text (train ground truth only) | handwritten | check | check | 1 (crops), 2 (pages) | P2 | [ilocr](https://ilocr.iiit.ac.in/icdar_2024_hwd/dataset.html) |
 | IIIT-Indic-HW-UC (Hindi) | Camera-captured handwriting | handwritten | Hindi part | check | 1 | P2 | [paper](https://cdn.iiit.ac.in/cdn/ilocr.iiit.ac.in/dataset/static/assets/img/publication/handwritten/unconstrained.pdf) |
 | IndicDLP (hi + en), AI4Bharat | Layout boxes, **same 42 labels as your data** | printed | ~119.8K pages, all languages | MIT on the AI4Bharat card (access form) | 2 | P2 | [site](https://indicdlp.github.io/), [HF (AI4Bharat)](https://huggingface.co/datasets/ai4bharat/indicdlp) |
@@ -353,17 +344,45 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 - The test set is used **only for the M1 and M2 reports**, never to choose settings. All tuning uses dev.
 - Gate values below are **proposed**. Stage 0 confirms them against the measured baseline and records them in the Decisions table.
 
-**Metrics:**
-- CER/WER, raw and NFC-normalized. Matras and nukta are never normalized away. Computed on `ok` regions; `partial` and `illegible` regions are checked for correct markers instead.
-- Block F1 at IoU 0.5.
-- Reading-order Kendall τ.
-- Output parses (valid format and valid UTF-8).
-- chrF++ and COMET for translation.
-- **Number/ID preservation:** every digit sequence and legal section number in the source appears unchanged in the English.
+**Targets:**
+
+| Metric | Stage 1 | Stage 2 | Final V1 |
+|---|---|---|---|
+| Printed line CER | ≤3% | ≤3% | ≤3% |
+| Government page CER | measure baseline | ≤5% | ≤5% |
+| Layout mAP@50 | — | ≥0.85 | ≥0.85 |
+| Bounding-box IoU | — | ≥0.80 | ≥0.80 |
+| Extraction field F1 | — | ≥0.85 | ≥0.90 |
+| Reading-order accuracy | — | ≥0.90 | ≥0.95 |
+| Translation faithfulness | — | human-reviewed | human-reviewed |
+| Valid structured output | — | ≥98% | ≥99% |
+
+**How each is computed** (`evaluation/report.py`, `evaluation/page_metrics.py`):
+
+| Metric | Computation |
+|---|---|
+| Crop CER / WER | Corpus-level edits ÷ reference length, raw and NFC. Characters are code points, so matras and nukta count. Reported per source, script, language and script × language. "Printed line CER" uses printed crops: the current Mozhi test set has words only |
+| Page CER | Ground-truth block text in reading order vs the predicted blocks' text in output order. Whitespace collapsed; HTML tags removed from the prediction (the base model writes tables as HTML). Output without parsable blocks is scored as plain text |
+| Layout AP@50 / mAP@50 | VOC all-point AP at IoU 0.5 per page, averaged. The model gives no confidence scores, so predictions are ranked by output order. Class-agnostic AP, and class-aware mAP over each page's ground-truth labels. The base model uses its own label names, so its class-aware score is near 0 until Stage 2 teaches the IndicDLP labels |
+| Bounding-box IoU | One-to-one greedy matching at any overlap; mean over ground-truth blocks, unmatched = 0. Boxes are 0–999 on both sides, and IoU is unchanged by per-axis scaling |
+| Block P / R / F1 | One-to-one greedy matching at IoU ≥ 0.5, labels ignored |
+| Reading-order accuracy | Share of matched block pairs whose relative order agrees with the ground truth |
+| Valid structured output | Output parses into well-formed grounded blocks (0–999 boxes, no leftover tags, valid UTF-8) **and** generation ended before `max_new_tokens` |
+| Extraction field F1 | **Not measurable:** no field labels exist in the data, and key-value fields are outside V1 scope |
+| Translation faithfulness | **Not measurable before Stage 4** (no translated output). Review by hand then, with number/ID preservation and chrF++/COMET as automatic checks |
+
+**Before-training check on the test data** (`dataEngine/data/test_data`):
+- Convert with `configs/data/test_data.toml`.
+- Evaluate with `configs/eval/test_data.toml --split test --checkpoint start`.
+- The sample:
+  - 200 Mozhi printed words
+  - 200 golden FIR regions
+  - all 49 golden pages (538 blocks)
+- `test_data/cvit` is a byte-identical copy of `test_data/mozhi`, so it is used once.
 
 | Stage | Gate (proposed) |
 |---|---|
-| 1 | Handwritten-Hindi region CER drops ≥30% relative to baseline; Mozhi Hindi line CER ≤3%; English-region CER rises by ≤0.5 points |
+| 1 | Per sub-stage, in each config's `[[eval.gates]]` ([Stage 1 §6](stages/stage-1-script-adaptation.md#6-evaluation-before-and-after)). Overall vs the original OCR-2: handwritten-Hindi CER drops ≥30% relative; Mozhi Hindi CER ≤3%; English CER rises by ≤0.5 points |
 | 2 | Block F1@0.5 ≥0.85; Kendall τ ≥0.90; parses ≥98%; crop CER no more than 0.5 points worse than Stage 1 |
 | 3 | chrF++ ≥ IndicTrans2 − 3 (FLORES hi→en); number/ID preservation ≥99% |
 | 4 | OCR CER no more than 0.5 points worse than Stage 2; parses ≥99%; block recall and precision ≥0.98; number/ID preservation ≥99%; translation chrF++ ≥ two-model pipeline (Stage 2 + IndicTrans2) − 3 |
@@ -380,11 +399,11 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 | RTX 3060 12GB | Data conversion, smoke tests, small inference |
 
 **Memory** (estimates; Stage 0 measures the real numbers):
-- **Weights** in bf16 ≈ 6.7GB (decoder 5.9GB + encoder ~0.8GB).
-- **Trainable state:** LoRA ≈4.0M (r16) or ≈8.0M (r32) parameters. Optimizer state < 0.2GB.
+- **Weights** in bf16 ≈ 6.8GB (3.39B parameters).
+- **Trainable state:** Stage 1 LoRA 3.0M parameters; later stages ≈4–8M. Optimizer state < 0.2GB.
 - **Activations** are the real cost:
   - Full page: up to ~1,150 vision tokens + ≤2,200 target tokens. Micro-batch 1 with gradient checkpointing, est. 25–40GB.
-  - Crops: ~100 vision tokens, micro-batch ~16.
+  - Crops: 145 image positions at 768, micro-batch 8.
 - **Speed risk:** Hugging Face's MoE code loops over experts in Python, so real speed may be lower. Stage 0 measures it.
 
 **Storage:** ≈150GB.
@@ -399,28 +418,28 @@ Weeks start on Monday 2026-11-23. This week (11-18 → 11-22): request dataset a
 ```
             W1    W2    W3    W4    W5    W6    W7    W8
 Stage 0     ████
-Stage 1           ████
-Stage 2                 ████
-M1 report                     ██
+Stage 1           ██████████                           (1A + 1B in W2, 1C in W3)
+Stage 2                       ████
+M1 report                        ██
 Stage 3           ░░░░░░░░░░░░                         (MI300X, parallel)
 Stage 4                             ██████████
 Stage 5                                         ████
-Buffer                                                ████   (Stage 1b / reruns / M2)
+Buffer                                                ████   (follow-up experiments / reruns / M2)
 ```
 
 | Week | Dates | Work | Exit |
 |---|---|---|---|
-| W1 | 11-23 → 11-29 | Stage 0: convert, split, smoke tests, baseline v1 vs v2, measure speed | splits locked, model + gates chosen |
-| W2 | 11-30 → 12-06 | Stage 1. Stage 3 starts on MI300X | Stage 1 gate |
-| W3 | 12-07 → 12-13 | Stage 2 | Stage 2 gate |
-| W4 | 12-14 → 12-20 | **M1 report** on test: Hindi FIR reading + layout vs baseline. Stage 3 gate | **M1: Hindi FIR reader** |
+| W1 | 11-23 → 11-29 | Stage 0: convert, split, smoke tests, OCR-2 baseline (`evaluation --checkpoint start`), measure speed | splits locked, gates set |
+| W2 | 11-30 → 12-06 | Stage 1A, then 1B. Stage 3 starts on MI300X | 1A and 1B gates |
+| W3 | 12-07 → 12-13 | Stage 1C, then start Stage 2 | 1C gate |
+| W4 | 12-14 → 12-20 | Finish Stage 2. **M1 report** on test: Hindi FIR reading + layout vs the original OCR-2. Stage 3 gate | **M1: Hindi FIR reader** |
 | W5–6 | 12-21 → 2027-01-03 | Stage 4: J0 vs J1, then the full joint run | Stage 4 gate |
 | W7 | 2027-01-04 → 01-10 | Stage 5: test set, quantization, latency, renderer contract | release check |
-| W8 | 2027-01-11 → 01-17 | Buffer: Stage 1b or reruns. **M2 report** | **M2: hindidoc-v0.1** |
+| W8 | 2027-01-11 → 01-17 | Buffer: follow-up experiments or reruns. **M2 report** | **M2: hindidoc-v0.1** |
 
 **Cut list if behind schedule.** Drop items from the top first. The bottom block is never dropped.
 
-1. Stage 1b (vision unfreeze).
+1. Stage 1 follow-up experiments (MoE expert LoRA, encoder/conv unfreeze, 1024 resolution).
 2. P2 datasets (ICDAR 2024 HWD, HW-UC, IndicDLP, IN22, Sarvam).
 3. J1 merge experiments. Run Stage 4 as J0 only.
 4. Stage 3 as a separate branch. Its data goes straight into Stage 4 (J0).
@@ -448,10 +467,12 @@ Buffer                                                ████   (Stage 1b /
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Engineering time (no code yet) | Weeks slip | Unsloth, one entry point, P1-only data, cut list |
+| Engineering time | Weeks slip | One entry point, P1-only data, cut list |
+| Stage 1 now has three sub-stages | Stage 2 squeezed into W3–W4 before M1 | Measure speed in Stage 0; shorten 1C epochs before touching Stage 2 |
+| Encoder LoRA silently untrained (official `no_grad`) | Stage 1 learns only in the decoder | Loader fix + smoke S6 per-group gradient check |
 | Custom model code vs library versions | Training won't start or gives a wrong loss | Pin the stack; Stage 0 smoke tests (load, freeze check, finite loss, gradients flow, save/reload) |
 | Slow MoE training | Hours exceed the estimates | Measure in Stage 0; Unsloth; smaller epochs |
-| LoRA alone cannot read handwriting | Stage 1 gate fails | Stage 1b in the W8 buffer; SAM experiment in V2 |
+| LoRA alone cannot read handwriting | 1B gate fails | Follow-up experiments (encoder blocks, conv downsampler) in the W8 buffer |
 | Same writer in train and test | Scores look better than reality | Split by police station |
 | Forgetting English text | Mixed pages break | English regions in replay + retention gate |
 | Language branch damages OCR | Stage 4 regresses | J0 control + λ sweep + OCR gate |
@@ -466,7 +487,7 @@ Buffer                                                ████   (Stage 1b /
 |---|---|---|
 | Hindi page count; number of police stations / documents | Stage 0 (split) | Decisions table |
 | What the human check covered (text only, or boxes + labels too) | Stage 0 | Decisions table |
-| v1 vs OCR-2; Gundam vs Base resolution | Stage 0 baseline | Decisions table |
+| Image mode for 1A/1B: 768 vs 1024 view | Stage 0 baseline | Decisions table |
 | Final gate values | Stage 0 baseline | Decisions table |
 | Edge target device and latency budget | Stage 5 | Decisions table |
 

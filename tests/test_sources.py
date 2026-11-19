@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from conftest import GOLDEN, needs_golden
+from conftest import GOLDEN, OVERRIDES, needs_golden
 from PIL import Image
 
 from dataEngine.golden import convert_document
@@ -59,7 +59,7 @@ def test_golden_pages_to_crop_records(repo_tmp):
     documents = sorted(p for p in GOLDEN.iterdir() if (p / "manifest.json").is_file())
     pages, problems = [], []
     for document in documents:
-        doc_pages, doc_problems = convert_document(document, GOLDEN)
+        doc_pages, doc_problems = convert_document(document, GOLDEN, OVERRIDES)
         pages += doc_pages
         problems += doc_problems
     assert problems == []

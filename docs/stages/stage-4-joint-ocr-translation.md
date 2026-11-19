@@ -79,7 +79,7 @@ The format is defined once in [training-plan.md §7](../training-plan.md#7-model
 | `layers.0-11.self_attn.{q,k,v,o}_proj` | **LoRA r32** (new) |
 | `layers.0.mlp.{gate,up,down}_proj` | **LoRA r32** (new) |
 | `layers.1-11.mlp.shared_experts.{gate,up,down}_proj` | **LoRA r32** (new) |
-| `sam_model`, `vision_model` / `qwen2_model` | frozen |
+| `sam_model`, `qwen2_model` | frozen |
 | routed experts, router, `embed_tokens`, `lm_head`, `image_newline`, `view_seperator` | frozen |
 
 **Why LoRA (not full fine-tuning):**

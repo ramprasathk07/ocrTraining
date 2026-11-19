@@ -1,0 +1,137 @@
+# Stage 1A — printed Hindi (docs/stages/stage-1-script-adaptation.md)
+#   python -m training.inventory --config configs/stage1/1a_printed.toml        # check LoRA targets
+#   torchrun --nproc_per_node=1 -m training   --config configs/stage1/1a_printed.toml --smoke
+#   torchrun --nproc_per_node=N -m training   --config configs/stage1/1a_printed.toml
+#   torchrun --nproc_per_node=N -m evaluation --config configs/stage1/1a_printed.toml \
+#       --checkpoint start --checkpoint outputs/runs/stage1a_printed/merged
+
+name = "stage1a_printed"
+
+[stage]
+id = "1A"
+description = "printed Hindi crops (public data only)"
+starts_from = "base"   # [model].name_or_path is its merged output ("base" = original OCR-2)
+
+[model]   # start: the original DeepSeek-OCR 2
+name_or_path = "deepseek-ai/DeepSeek-OCR-2"
+revision = "aaa02f3811945a91062062994c5c4a3f4c0af2b0"   # pinned; change only on purpose
+attn_implementation = "flash_attention_2"               # decoder only; "eager" without flash-attn
+
+[image]   # crops: one 768 view (stretched, 145 positions). Later run: image_size = 1024.
+base_size = 1024
+image_size = 768
+crop_mode = false
+
+[lora]   # decoder attention (default group); MoE experts, router, SAM, convs, projector frozen
+r = 16
+alpha = 32
+dropout = 0.05
+target_modules = 'model\.(layers|qwen2_model\.model\.model\.layers)\.\d+\.self_attn\.[qkvo]_proj'
+
+[[lora.groups]]   # DeepEncoder V2 attention: smaller rank and learning rate
+pattern = 'qwen2_model\..*'
+r = 8
+alpha = 16
+learning_rate = 5e-5
+
+[train]
+output_dir = "outputs/runs/stage1a_printed"
+prompts_dir = "report/prompts/training"   # training prompt registry
+seed = 1234
+global_batch_size = 64      # fixed for any GPU count
+per_device_batch_size = 8   # lower if smoke S9 shows too much memory
+learning_rate = 1e-4        # decoder LoRA; groups set their own
+weight_decay = 0.01
+warmup_ratio = 0.03
+lr_scheduler = "cosine"
+max_grad_norm = 1.0
+gradient_checkpointing = true
+logging_steps = 50
+save_steps = 1000
+eval_steps = 1000
+
+[data]
+epoch_size = 100000
+num_epochs = 2
+dev_size = 2000
+max_target_tokens = 1536   # longer targets are dropped and counted, never truncated
+num_workers = 8            # DataLoader workers per GPU
+
+[[data.phases]]   # epoch-1 curriculum: words, then words + lines
+fraction = 0.5
+levels = ["word"]
+
+[[data.phases]]
+fraction = 0.5
+levels = ["word", "line"]
+
+[[data.sources]]   # printed Hindi, official CVIT / ilocr download (convert first)
+name = "mozhi_hi"
+path = "outputs/data/crops/mozhi_hi"
+share = 1.0
+task = "crop_ocr"
+
+[smoke]   # golden crops exist before any public download
+path = "outputs/data/crops/golden_regions"
+task = "crop_ocr"
+samples = 8
+steps = 30
+
+[eval]   # same suite in 1A, 1B and 1C so every stage is comparable
+output_dir = "outputs/runs/stage1a_printed/eval"
+report_dir = "report/stage1a_printed"
+prompts_dir = "report/prompts/eval"   # eval prompt registry + leaderboard
+no_repeat_ngram_size = 35   # the model's own eval setting
+seed = 1234
+
+[[eval.sources]]
+name = "golden_regions"
+path = "outputs/data/crops/golden_regions"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "mozhi_hi"
+path = "outputs/data/crops/mozhi_hi"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "iiit_hw_dev"
+path = "outputs/data/crops/iiit_hw_dev"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "dohascript"
+path = "outputs/data/crops/dohascript"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "iam_lines"
+path = "outputs/data/crops/iam_lines"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+# Gates compare each later --checkpoint with the first (here: start = original OCR-2).
+# Proposed values; confirm them against the measured baseline (docs/training-plan.md §9).
+[[eval.gates]]   # printed Hindi line reading
+group = "source=mozhi_hi"
+metric = "cer"
+max_value = 0.03
+
+[[eval.gates]]   # printed training must not hurt handwriting
+group = "script=handwritten"
+metric = "cer"
+max_absolute_change = 0.005
+
+[[eval.gates]]   # nor FIR reading
+group = "source=golden_regions"
+metric = "cer"
+max_absolute_change = 0.005

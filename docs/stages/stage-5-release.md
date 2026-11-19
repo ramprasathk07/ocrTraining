@@ -105,7 +105,7 @@ Save the following together:
 - split files + their hashes
 - `env.txt`
 - data manifests
-- `baseline.json`
+- the OCR-2 baseline report
 - all evaluation outputs
 - the M2 report
 
@@ -124,7 +124,7 @@ Save the following together:
 |---|---|
 | A quantization path does not load the custom model | Report bf16 only. Quantization moves to V2 (cut-list item 5) |
 | v0.1 loses to the pipeline | Report it honestly. The pipeline is the M2 product path, and the single model continues in V2 |
-| Buffer week used up by Stage 1b or reruns | Keep 5.1, 5.5 and 5.6. Shorten 5.2 to the top 10 errors |
+| Buffer week used up by follow-up experiments or reruns | Keep 5.1, 5.5 and 5.6. Shorten 5.2 to the top 10 errors |
 
 ## 4. Code this stage needs
 

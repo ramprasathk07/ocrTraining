@@ -1,0 +1,154 @@
+# Stage 1C — joint printed + handwritten, with the golden FIR regions (docs/stages/stage-1-script-adaptation.md)
+# Starts from 1B merged; balanced printed/handwritten replay plus golden regions.
+#   torchrun --nproc_per_node=N -m training   --config configs/stage1/1c_joint.toml
+#   torchrun --nproc_per_node=N -m evaluation --config configs/stage1/1c_joint.toml \
+#       --checkpoint start --checkpoint outputs/runs/stage1c_joint/merged
+# Whole Stage 1 vs the original OCR-2, in this config's image mode:
+#   ... -m evaluation --config configs/stage1/1c_joint.toml \
+#       --checkpoint deepseek-ai/DeepSeek-OCR-2 --checkpoint outputs/runs/stage1c_joint/merged
+
+name = "stage1c_joint"
+
+[stage]
+id = "1C"
+description = "joint printed + handwritten replay with golden FIR regions"
+starts_from = "1B"   # [model].name_or_path is its merged output ("base" = original OCR-2)
+
+[model]   # start: 1B merged
+name_or_path = "outputs/runs/stage1b_handwritten/merged"
+revision = "aaa02f3811945a91062062994c5c4a3f4c0af2b0"
+attn_implementation = "flash_attention_2"
+
+[image]   # golden regions are paragraph-sized: 1024 global view + 768 tiles keeps handwriting legible
+base_size = 1024
+image_size = 768
+crop_mode = true
+
+[lora]
+r = 16
+alpha = 32
+dropout = 0.05
+target_modules = 'model\.(layers|qwen2_model\.model\.model\.layers)\.\d+\.self_attn\.[qkvo]_proj'
+
+[[lora.groups]]
+pattern = 'qwen2_model\..*'
+r = 8
+alpha = 16
+learning_rate = 5e-5
+
+[train]
+output_dir = "outputs/runs/stage1c_joint"
+prompts_dir = "report/prompts/training"   # training prompt registry
+seed = 1234
+global_batch_size = 64
+per_device_batch_size = 8
+learning_rate = 1e-4
+weight_decay = 0.01
+warmup_ratio = 0.03
+lr_scheduler = "cosine"
+max_grad_norm = 1.0
+gradient_checkpointing = true
+logging_steps = 50
+save_steps = 1000
+eval_steps = 1000
+
+[data]   # no curriculum: everything mixed from the start
+epoch_size = 100000
+num_epochs = 2
+dev_size = 2000
+max_target_tokens = 1536
+num_workers = 8
+
+[[data.sources]]   # your FIR regions (~21K train): only in 1C
+name = "golden_regions"
+path = "outputs/data/crops/golden_regions"
+share = 0.40
+task = "crop_ocr"
+
+[[data.sources]]   # printed replay (30%)
+name = "mozhi_hi"
+path = "outputs/data/crops/mozhi_hi"
+share = 0.30
+task = "crop_ocr"
+
+[[data.sources]]   # handwritten replay (30%)
+name = "iiit_hw_dev"
+path = "outputs/data/crops/iiit_hw_dev"
+share = 0.15
+task = "crop_ocr"
+
+[[data.sources]]
+name = "dohascript"
+path = "outputs/data/crops/dohascript"
+share = 0.10
+task = "crop_ocr"
+
+[[data.sources]]
+name = "iam_lines"
+path = "outputs/data/crops/iam_lines"
+share = 0.05
+task = "crop_ocr"
+
+[smoke]
+path = "outputs/data/crops/golden_regions"
+task = "crop_ocr"
+samples = 8
+steps = 30
+
+[eval]   # same suite as 1A and 1B
+output_dir = "outputs/runs/stage1c_joint/eval"
+report_dir = "report/stage1c_joint"
+prompts_dir = "report/prompts/eval"   # eval prompt registry + leaderboard
+no_repeat_ngram_size = 35
+seed = 1234
+
+[[eval.sources]]
+name = "golden_regions"
+path = "outputs/data/crops/golden_regions"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "mozhi_hi"
+path = "outputs/data/crops/mozhi_hi"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "iiit_hw_dev"
+path = "outputs/data/crops/iiit_hw_dev"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "dohascript"
+path = "outputs/data/crops/dohascript"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "iam_lines"
+path = "outputs/data/crops/iam_lines"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+# Gates vs the first --checkpoint (here: start = 1B merged). Proposed values.
+[[eval.gates]]   # FIR regions are the point of 1C
+group = "source=golden_regions"
+metric = "cer"
+max_relative_change = -0.10
+
+[[eval.gates]]
+group = "script=handwritten"
+metric = "cer"
+max_absolute_change = 0.005
+
+[[eval.gates]]
+group = "script=printed"
+metric = "cer"
+max_absolute_change = 0.005

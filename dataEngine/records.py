@@ -13,6 +13,7 @@ from pathlib import Path
 SPLITS = ("train", "dev", "test")
 SCRIPTS = ("printed", "handwritten", "mixed", "unknown")
 LEVELS = ("word", "line", "region")
+PAGE_LEVEL = "page"  # level of every PageRecord, for curricula that mix crops and pages
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,14 @@ class PageRecord:
     width: int
     height: int
     blocks: tuple[Block, ...]
+
+    @property
+    def id(self) -> str:
+        return self.page_id
+
+    @property
+    def level(self) -> str:
+        return PAGE_LEVEL
 
     @property
     def station_key(self) -> str:

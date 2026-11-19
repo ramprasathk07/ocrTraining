@@ -51,7 +51,7 @@ ocrTraining/
 
 - One responsibility per folder. Data code never trains; training never writes final reports; evaluation never trains.
 - Imports flow one way: `training` and `evaluation` import from `dataEngine` and `models`. `dataEngine` and `models` import from neither. `training` may import metric functions from `evaluation` for validation logs.
-- Each pipeline has exactly one entry point that takes a config path, e.g. `python -m training --config configs/<run>`.
+- Each pipeline has exactly one entry point that takes a config path, e.g. `python -m training --config configs/stage1/1a_printed.toml`.
 - Generated files never go inside source folders.
 - **Easy to extend.** A new task, dataset or variation is one new function, registered by name, plus a config entry. Never copy a script or fork a pipeline to make a variant.
 
@@ -115,7 +115,8 @@ Record each answer here when the user gives it. Never re-ask a recorded decision
 | Decision | Answer | Date |
 |----------|--------|------|
 | Plan | `docs/training-plan.md` + `docs/stages/` are the source of truth for stages, data and gates | 2026-11-18 |
-| Base model | DeepSeek-OCR 3B family. v1 vs OCR-2 picked by the Stage 0 baseline. Fine-tune only, never from scratch | 2026-11-18 |
+| Base model | DeepSeek-OCR 2 (3B), revision aaa02f3811945a91062062994c5c4a3f4c0af2b0. Fine-tune only, never from scratch | 2026-11-19 |
+| Stage 1 structure | 1A printed (public only) → 1B handwritten, separate adapter on 1A merged (IIIT-HW-Dev, DohaScript, IAM English) → 1C joint on 1B merged (golden regions only here, balanced replay) | 2026-11-19 |
 | Languages (V1) | Hindi + English only (translation target English). Marathi deferred to V2 | 2026-11-18 |
 | Time box | M1 results by 2026-12-20, M2 final by 2027-01-17 (hard limit) | 2026-11-18 |
 | Task output (V1) | Grounded bilingual blocks: box (0–999) + IndicDLP label + reading order + source + English. No key-value fields | 2026-11-18 |
@@ -125,7 +126,12 @@ Record each answer here when the user gives it. Never re-ask a recorded decision
 | Split | By police station (fallback: by document). Test used only for the M1/M2 reports | 2026-11-18 |
 | Compute | A6000 48GB primary. MI300X after a ROCm smoke test. RTX 3060 for data/smoke tests | 2026-11-18 |
 | Training framework | HF Trainer + PEFT on the official checkpoint (replaces "Unsloth first"; Unsloth only if too slow). Pinned in `pyproject.toml`: py 3.12, torch 2.6.0, transformers 4.46.3, peft 0.13.2, accelerate 1.1.1 | 2026-11-18 |
-| Trainable parts (V1) | Decoder LoRA only. `projector` + vision frozen (official forward runs them under `no_grad`); patch only if Stage 1b runs | 2026-11-18 |
+| Trainable parts (Stage 1) | LoRA on DeepEncoder V2 attention (r8, α16, lr 5e-5) + decoder attention (r16, α32, lr 1e-4) = 3,047,424 params. SAM, convs, projector, experts, router, embeddings, LM head frozen. Loader disables the official `no_grad` on the vision path | 2026-11-19 |
+| Evaluation | Before/after runner: first `--checkpoint` is before; one shared eval suite per stage; report with gates per config | 2026-11-19 |
+| Test data + page metrics | `dataEngine/data/test_data` (Mozhi printed words, 49 golden FIR pages) is evaluation-only. Page metrics: page CER, AP/mAP@50 (output-order ranking), box IoU, block F1, reading order, valid output. Field F1 not measurable (no labels); translation reviewed by hand from Stage 4 | 2026-11-19 |
+| Stage structure | One run config per stage/sub-stage in `configs/stage<N>/` with `[stage] id, description, starts_from`; `python -m training.stages` is the tree. Training type = task in `dataEngine/tasks.py` (prompt + record kind); training and evaluation share `read_split` | 2026-11-19 |
+| Prompt registries | Training: `report/prompts/training/` (runs.md). Evaluation: `report/prompts/eval/` (leaderboard.md). Versions are prompt-text hashes; reports flag training/eval prompt mismatch | 2026-11-19 |
+| Station mapping | Document ids that do not fit `<District>_<Station>_PS_<case>_<yy>` go in `[golden.station_overrides]`; the 3 in configs/data/test_data.toml are unconfirmed readings | 2026-11-19 |
 | Naming | Keep `dataEngine/` folder; all modules and functions snake_case | 2026-11-18 |
 | Config format | TOML (stdlib `tomllib`), one file per run in `configs/` | 2026-11-18 |
 | Dev tools | ruff (lint + format), pytest. Training logs: TensorBoard via the Trainer | 2026-11-18 |

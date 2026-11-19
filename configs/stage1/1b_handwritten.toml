@@ -1,0 +1,150 @@
+# Stage 1B — handwritten Hindi + English (docs/stages/stage-1-script-adaptation.md)
+# Starts from the best 1A checkpoint, merged, and trains a separate handwriting adapter on it.
+#   python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/stage1a_printed/<best checkpoint>
+#   (or use outputs/runs/stage1a_printed/merged, written at the end of 1A)
+#   torchrun --nproc_per_node=N -m training   --config configs/stage1/1b_handwritten.toml
+#   torchrun --nproc_per_node=N -m evaluation --config configs/stage1/1b_handwritten.toml \
+#       --checkpoint start --checkpoint outputs/runs/stage1b_handwritten/merged
+
+name = "stage1b_handwritten"
+
+[stage]
+id = "1B"
+description = "handwritten Hindi + English crops, separate adapter on 1A"
+starts_from = "1A"   # [model].name_or_path is its merged output ("base" = original OCR-2)
+
+[model]   # start: 1A merged. `revision` is ignored for local folders and kept for provenance.
+name_or_path = "outputs/runs/stage1a_printed/merged"
+revision = "aaa02f3811945a91062062994c5c4a3f4c0af2b0"
+attn_implementation = "flash_attention_2"
+
+[image]
+base_size = 1024
+image_size = 768
+crop_mode = false
+
+[lora]   # fresh adapter, same targets as 1A
+r = 16
+alpha = 32
+dropout = 0.05
+target_modules = 'model\.(layers|qwen2_model\.model\.model\.layers)\.\d+\.self_attn\.[qkvo]_proj'
+
+[[lora.groups]]
+pattern = 'qwen2_model\..*'
+r = 8
+alpha = 16
+learning_rate = 5e-5
+
+[train]
+output_dir = "outputs/runs/stage1b_handwritten"
+prompts_dir = "report/prompts/training"   # training prompt registry
+seed = 1234
+global_batch_size = 64
+per_device_batch_size = 8
+learning_rate = 1e-4
+weight_decay = 0.01
+warmup_ratio = 0.03
+lr_scheduler = "cosine"
+max_grad_norm = 1.0
+gradient_checkpointing = true
+logging_steps = 50
+save_steps = 1000
+eval_steps = 1000
+
+[data]
+epoch_size = 150000
+num_epochs = 2
+dev_size = 2000
+max_target_tokens = 1536
+num_workers = 8
+
+[[data.phases]]   # epoch-1 curriculum: words, then words + lines
+fraction = 0.5
+levels = ["word"]
+
+[[data.phases]]
+fraction = 0.5
+levels = ["word", "line"]
+
+# Official downloads only (convert each first; see configs/data/training_data.toml)
+[[data.sources]]   # handwritten Hindi words, IIIT-H CVIT
+name = "iiit_hw_dev"
+path = "outputs/data/crops/iiit_hw_dev"
+share = 0.50
+task = "crop_ocr"
+
+[[data.sources]]   # handwritten Hindi lines, the authors' release
+name = "dohascript"
+path = "outputs/data/crops/dohascript"
+share = 0.25
+task = "crop_ocr"
+
+[[data.sources]]   # handwritten English lines, IAM (FKI group, non-commercial research licence)
+name = "iam_lines"
+path = "outputs/data/crops/iam_lines"
+share = 0.25
+task = "crop_ocr"
+
+[smoke]
+path = "outputs/data/crops/golden_regions"
+task = "crop_ocr"
+samples = 8
+steps = 30
+
+[eval]   # same suite as 1A and 1C
+output_dir = "outputs/runs/stage1b_handwritten/eval"
+report_dir = "report/stage1b_handwritten"
+prompts_dir = "report/prompts/eval"   # eval prompt registry + leaderboard
+no_repeat_ngram_size = 35
+seed = 1234
+
+[[eval.sources]]
+name = "golden_regions"
+path = "outputs/data/crops/golden_regions"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "mozhi_hi"
+path = "outputs/data/crops/mozhi_hi"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "iiit_hw_dev"
+path = "outputs/data/crops/iiit_hw_dev"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "dohascript"
+path = "outputs/data/crops/dohascript"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+[[eval.sources]]
+name = "iam_lines"
+path = "outputs/data/crops/iam_lines"
+task = "crop_ocr"
+limit = 2000
+max_new_tokens = 1536
+
+# Gates vs the first --checkpoint (here: start = 1A merged). Proposed values.
+[[eval.gates]]   # handwritten Hindi must improve clearly
+group = "script=handwritten|lang=hi"
+metric = "cer"
+max_relative_change = -0.30
+
+[[eval.gates]]   # without damaging printed reading
+group = "script=printed"
+metric = "cer"
+max_absolute_change = 0.005
+
+[[eval.gates]]
+group = "source=golden_regions"
+metric = "cer"
+max_absolute_change = 0.005

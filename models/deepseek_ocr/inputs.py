@@ -1,9 +1,8 @@
-"""DeepSeek-OCR v1 input encoding: image preprocessing, token layout, labels, batching.
+"""DeepSeek-OCR 2 input encoding: image preprocessing, token layout, labels, batching.
 
-Mirrors `infer()` and `dynamic_preprocess()` in the model's own code (MIT licence,
-deepseek-ai/DeepSeek-OCR at the revision pinned in config). Training, evaluation and the
-official inference therefore see identical inputs. OCR-2 uses a different layout (no
-row-end tokens, 768 tiles) and needs its own encoder before it can be trained.
+Mirrors `infer()` and `dynamic_preprocess()` in the model's own code (Apache-2.0,
+deepseek-ai/DeepSeek-OCR-2 at the revision pinned in config). Training, evaluation and the
+official inference therefore see identical inputs.
 """
 
 import math
@@ -21,30 +20,34 @@ EOS_ID = 1
 IGNORE_INDEX = -100
 PATCH_SIZE = 16
 DOWNSAMPLE_RATIO = 4
-TILE_SIZE = 640  # dynamic_preprocess default tile size in v1
+TILE_SIZE = 768  # dynamic_preprocess tile size in OCR-2
+ENCODER_SIZES = (768, 1024)  # DeepEncoder V2 has learned queries only for these (144 / 256)
 PAD_RGB = (127, 127, 127)  # int(0.5 * 255): the model pads with its normalisation mean
 
 
 @dataclass(frozen=True)
 class ImageConfig:
-    """The model's own preprocessing knobs (see README: Tiny/Small/Base/Large/Gundam)."""
+    """The model's own preprocessing knobs.
+
+    crop_mode = true: 1024 global view + 768 tiles for large images (the model's default).
+    crop_mode = false: one view of `image_size` (768 or 1024); `base_size` only sizes the
+    empty tile tensor.
+    """
 
     base_size: int
     image_size: int
     crop_mode: bool
 
     def __post_init__(self) -> None:
-        if self.crop_mode and self.image_size != TILE_SIZE:
-            raise ValueError(
-                f"crop_mode tiles are {TILE_SIZE}px in v1; set image_size = {TILE_SIZE}"
-            )
+        if self.crop_mode and (self.base_size, self.image_size) != (1024, TILE_SIZE):
+            raise ValueError("crop_mode needs base_size = 1024 (global view), image_size = 768")
+        if not self.crop_mode and self.image_size not in ENCODER_SIZES:
+            raise ValueError(f"image_size must be one of {ENCODER_SIZES} (DeepEncoder V2 queries)")
 
 
 @dataclass(frozen=True)
 class EncodedImage:
-    patches: (
-        torch.Tensor
-    )  # (tiles, 3, 640, 640), or zeros(1, 3, base, base) when there are no tiles
+    patches: torch.Tensor  # (tiles, 3, 768, 768), or zeros(1, 3, base, base) without tiles
     global_view: torch.Tensor  # (1, 3, size, size)
     tiles: tuple[int, int]  # (tiles across, tiles down)
     num_tokens: int  # image-token positions this image occupies in the sequence
@@ -81,9 +84,9 @@ def _closest_aspect_ratio(
 
 
 def _tile(
-    image: Image.Image, min_num: int = 2, max_num: int = 9
+    image: Image.Image, min_num: int = 2, max_num: int = 6
 ) -> tuple[list[Image.Image], tuple[int, int]]:
-    """Resize to a grid of 640px tiles closest to the image's aspect ratio (dynamic_preprocess)."""
+    """Resize to a grid of 768px tiles closest to the image's aspect ratio (dynamic_preprocess)."""
     width, height = image.size
     ratios = sorted(
         {
@@ -113,21 +116,17 @@ def encode_image(image: Image.Image, cfg: ImageConfig) -> EncodedImage:
         if image.size[0] > TILE_SIZE or image.size[1] > TILE_SIZE:
             tiles, grid = _tile(image)
         global_view = ImageOps.pad(image, (cfg.base_size, cfg.base_size), color=PAD_RGB)
-        base = _queries(cfg.base_size)
-        num_tokens = (
-            base + 1
-        ) * base + 1  # rows of tokens + a row-end token each, + view separator
+        num_tokens = _queries(cfg.base_size) ** 2 + 1  # global view + view separator
         if tiles:
             q = _queries(cfg.image_size)
-            num_tokens += (q * grid[0] + 1) * (q * grid[1])
+            num_tokens += (q * grid[0]) * (q * grid[1])
     else:
         if cfg.image_size <= TILE_SIZE:
             image = image.resize(
                 (cfg.image_size, cfg.image_size)
             )  # the model stretches small modes
         global_view = ImageOps.pad(image, (cfg.image_size, cfg.image_size), color=PAD_RGB)
-        q = _queries(cfg.image_size)
-        num_tokens = (q + 1) * q + 1
+        num_tokens = _queries(cfg.image_size) ** 2 + 1
 
     patches = (
         torch.stack([to_tensor(t) for t in tiles])

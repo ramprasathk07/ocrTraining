@@ -1,5 +1,5 @@
 import pytest
-from conftest import GOLDEN, needs_golden
+from conftest import GOLDEN, OVERRIDES, needs_golden
 
 from dataEngine.golden import convert_document, parse_station, to_999
 
@@ -14,12 +14,16 @@ from dataEngine.golden import convert_document, parse_station, to_999
     ],
 )
 def test_parse_station(document_id, expected):
-    assert parse_station(document_id) == expected
+    assert parse_station(document_id, {}) == expected
 
 
 def test_parse_station_refuses_to_guess():
-    with pytest.raises(ValueError, match="ask for a station mapping"):
-        parse_station("scan_0001")
+    with pytest.raises(ValueError, match="station_overrides"):
+        parse_station("scan_0001", {})
+
+
+def test_station_override_wins():
+    assert parse_station("Darbhanga_BadhGao_13_26", OVERRIDES) == ("Darbhanga", "BadhGao")
 
 
 def test_to_999():
@@ -30,7 +34,7 @@ def test_to_999():
 
 @needs_golden
 def test_sample_document_converts_and_validates():
-    pages, problems = convert_document(GOLDEN / "Arariya_SC_ST_PS_07_18", GOLDEN)
+    pages, problems = convert_document(GOLDEN / "Arariya_SC_ST_PS_07_18", GOLDEN, OVERRIDES)
     assert problems == []
     assert [p.page_id for p in pages] == [
         "Arariya_SC_ST_PS_07_18/page_0001",

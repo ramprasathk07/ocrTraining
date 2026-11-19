@@ -13,14 +13,15 @@ from dataclasses import dataclass
 
 from torch.utils.data import Dataset
 
-from dataEngine.records import CropRecord, read_crops
-from dataEngine.tasks import get_task
+from dataEngine.records import CropRecord, PageRecord
+from dataEngine.tasks import get_task, read_split
 from models.deepseek_ocr.inputs import ImageConfig, encode_sample, load_image
 from training.config import DataConfig, PhaseConfig, SourceConfig
 
 log = logging.getLogger(__name__)
 
 Sample = tuple[int, int]  # (source index, record index)
+Record = CropRecord | PageRecord
 
 
 def split_counts(total: int, weights: list[float]) -> list[int]:
@@ -89,15 +90,14 @@ def plan_samples(
 
 
 def drop_long_targets(
-    records: list[CropRecord], tokenizer, max_tokens: int
-) -> tuple[list[CropRecord], int]:
+    records: list[Record], source: SourceConfig, tokenizer, max_tokens: int
+) -> tuple[list[Record], int]:
     """Remove records whose target exceeds `max_tokens` (never truncate a target)."""
     if not records:
         return [], 0
-    lengths = [
-        len(ids) + 1
-        for ids in tokenizer([r.text for r in records], add_special_tokens=False)["input_ids"]
-    ]
+    task = get_task(source.task)
+    targets = [task(r, source.image_root).target for r in records]
+    lengths = [len(ids) + 1 for ids in tokenizer(targets, add_special_tokens=False)["input_ids"]]
     kept = [r for r, n in zip(records, lengths, strict=True) if n <= max_tokens]
     return kept, len(records) - len(kept)
 
@@ -107,7 +107,7 @@ class TaskDataset(Dataset):
     """Plan index → encoded sample (image loading and preprocessing run in DataLoader workers)."""
 
     plan: list[Sample]
-    pools: list[list[CropRecord]]
+    pools: list[list[Record]]
     sources: list[SourceConfig]
     tokenizer: object
     image_cfg: ImageConfig
@@ -118,20 +118,23 @@ class TaskDataset(Dataset):
     def __getitem__(self, index: int) -> dict:
         source_index, record_index = self.plan[index]
         source = self.sources[source_index]
-        sample = get_task(source.task)(self.pools[source_index][record_index], source.path)
+        sample = get_task(source.task)(self.pools[source_index][record_index], source.image_root)
+        image_cfg = source.image or self.image_cfg
         return encode_sample(
-            sample.prompt, sample.target, load_image(sample.image), self.tokenizer, self.image_cfg
+            sample.prompt, sample.target, load_image(sample.image), self.tokenizer, image_cfg
         )
 
 
 def load_pools(
     sources: tuple[SourceConfig, ...], split: str, tokenizer, max_tokens: int
-) -> tuple[list[list[CropRecord]], dict]:
+) -> tuple[list[list[Record]], dict]:
     """Records of one split per source (long targets dropped and counted) + a data fingerprint."""
     pools, stats = [], {}
     for source in sources:
-        records = [r for r in read_crops(source.path) if r.split == split]
-        records, dropped = drop_long_targets(records, tokenizer, max_tokens)
+        records = read_split(get_task(source.task), source.path, split, source.splits)
+        if records is None:
+            raise FileNotFoundError(f"source {source.name!r}: no records at {source.path}")
+        records, dropped = drop_long_targets(records, source, tokenizer, max_tokens)
         ids = "\n".join(r.id for r in records).encode("utf-8")
         stats[source.name] = {
             "records": len(records),

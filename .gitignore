@@ -1,5 +1,11 @@
-# Generated data, checkpoints, reports
+# Generated data, checkpoints, predictions
 outputs/
+
+# Evaluation reports: before/after comparisons quote FIR text examples.
+# report/prompts/ (prompt versions, history, leaderboard: no FIR text) is tracked.
+report/*
+!report/prompts/
+!report/README.md
 
 # Golden FIR data contains personal information (names, addresses, caste). Never commit it.
 dataEngine/data/

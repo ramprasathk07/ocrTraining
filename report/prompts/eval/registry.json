@@ -1,0 +1,14 @@
+{
+  "p-8261c4fec7": {
+    "task": "crop_ocr",
+    "prompt": "<image>\nFree OCR.",
+    "first_seen": "2026-11-19T16:40:22+00:00",
+    "first_run": "eval_test_data"
+  },
+  "p-00a105b332": {
+    "task": "page_parse",
+    "prompt": "<image>\n<|grounding|>Convert the document to markdown.",
+    "first_seen": "2026-11-19T16:40:22+00:00",
+    "first_run": "eval_test_data"
+  }
+}

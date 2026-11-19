@@ -1,8 +1,8 @@
 """Data engine CLI.
 
-    python -m dataEngine --config configs/data.toml golden [--workers N]
-    python -m dataEngine --config configs/data.toml split
-    python -m dataEngine --config configs/data.toml crops --source NAME [--workers N]
+    python -m dataEngine --config configs/data/training_data.toml golden [--workers N]
+    python -m dataEngine --config configs/data/training_data.toml split
+    python -m dataEngine --config configs/data/training_data.toml crops --source NAME [--workers N]
 
 Steps run in that order: validated golden page records → locked splits → crop records per source.
 """
@@ -47,7 +47,9 @@ def run_golden(cfg: dict, workers: int) -> None:
     golden = cfg["golden"]
     data_root, out_dir = Path(golden["data_root"]), Path(golden["out_dir"])
     documents = sorted(p for p in data_root.iterdir() if (p / "manifest.json").is_file())
-    results = parallel_map(partial(convert_document, data_root=data_root), documents, workers)
+    overrides = golden.get("station_overrides", {})
+    convert = partial(convert_document, data_root=data_root, overrides=overrides)
+    results = parallel_map(convert, documents, workers)
     pages = [page for doc_pages, _ in results for page in doc_pages]
     problems = [problem for _, doc_problems in results for problem in doc_problems]
 

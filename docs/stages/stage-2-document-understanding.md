@@ -11,7 +11,7 @@ The result is the **M1 checkpoint**: a Hindi FIR reader.
 | | |
 |---|---|
 | Week | W3 (2026-12-07 → 12-13). M1 report in W4 |
-| Input checkpoint | `stage1` merged (or `stage1b` if it won) |
+| Input checkpoint | `stage1c_joint` merged |
 | Output checkpoint | `stage2` merged + `stage2_lora` |
 | Method | **Fresh LoRA r16 on the decoder.** Vision encoder and `projector` frozen |
 | Hardware | A6000 |
@@ -67,7 +67,7 @@ The output format is defined once in [training-plan.md §7](../training-plan.md#
 छीन लेने के सम्बंध में।
 ```
 
-**Page images:** use the resolution mode chosen in Stage 0 (v1 Gundam or Base, v2 default).
+**Page images:** OCR-2 tile mode (`crop_mode = true`: 1024 global view + 2–6 tiles of 768).
 
 **Output budget:** max 4,096 target tokens. The longest sample page needed 1,406 tokens source-only (see [tokenizer-check](../tokenizer-check.md#3-output-length-on-your-real-pages)). Any page above 4,096 is logged and skipped, never silently cut.
 
@@ -77,11 +77,11 @@ Stage 1's adapter is already merged into `stage1`. This stage adds a **fresh** a
 
 | Module | State |
 |---|---|
-| `projector` | frozen (trained only if Stage 1b ran and was merged) |
+| `projector` | frozen |
 | `layers.0-11.self_attn.{q,k,v,o}_proj` | **LoRA r16** (new) |
 | `layers.0.mlp.{gate,up,down}_proj` | **LoRA r16** (new) |
 | `layers.1-11.mlp.shared_experts.{gate,up,down}_proj` | **LoRA r16** (new) |
-| `sam_model`, `vision_model` / `qwen2_model` (incl. Stage 1b blocks if merged) | frozen |
+| `sam_model`, `qwen2_model` (Stage 1's encoder LoRA is already merged in) | frozen (revisit after the Stage 1 results) |
 | routed experts, router, `embed_tokens`, `lm_head`, `image_newline`, `view_seperator` | frozen |
 
 **Why LoRA:** only ~2.1K training pages, which is the classic small-data case. Full fine-tuning would memorize the pages and wreck the merge with Stage 3.
@@ -131,8 +131,8 @@ Run `stage2` **once** on the locked test set, next to the Stage 0 baseline-on-te
 
 | Risk | Fallback |
 |---|---|
-| Dense handwriting unreadable at tile resolution | Compare Gundam with more tiles vs Large 1280 on 50 dev pages. The vision tokens still fit the budget |
-| Complex form reading order | OCR-2's encoder was built for reading order; Stage 0 may already pick it. Add more page-parse share (layout-only down) |
+| Dense handwriting unreadable at tile resolution | Compare tile mode with a 1024 single view on 50 dev pages. The vision tokens still fit the budget |
+| Complex form reading order | OCR-2's encoder was built for reading order. If it still fails, add more page-parse share (layout-only down) |
 | Layout labels noisy (if the human check did not cover them) | Report class-agnostic block F1 next to class-aware. Do not gate on label accuracy until labels are confirmed |
 | IndicDLP access late | Layout-only task uses golden pages only. Shares unchanged |
 

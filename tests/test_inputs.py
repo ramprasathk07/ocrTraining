@@ -15,8 +15,9 @@ from models.deepseek_ocr.inputs import (
 )
 
 PROMPT = "<image>\nFree OCR."
-SMALL = ImageConfig(base_size=640, image_size=640, crop_mode=False)
-GUNDAM = ImageConfig(base_size=1024, image_size=640, crop_mode=True)
+VIEW_768 = ImageConfig(base_size=1024, image_size=768, crop_mode=False)
+VIEW_1024 = ImageConfig(base_size=1024, image_size=1024, crop_mode=False)
+TILED = ImageConfig(base_size=1024, image_size=768, crop_mode=True)
 
 
 class StubTokenizer:
@@ -26,10 +27,12 @@ class StubTokenizer:
         return [1000 + ord(c) for c in text]
 
 
-def test_small_mode_layout_and_labels():
-    item = encode_sample(PROMPT, "अब", Image.new("RGB", (300, 60), "white"), StubTokenizer(), SMALL)
+def test_768_view_layout_and_labels():
+    item = encode_sample(
+        PROMPT, "अब", Image.new("RGB", (300, 60), "white"), StubTokenizer(), VIEW_768
+    )
     ids, labels = item["input_ids"].tolist(), item["labels"].tolist()
-    n_image = 111  # 10 rows × (10 tokens + row end) + view separator
+    n_image = 145  # 12 x 12 DeepEncoder V2 queries + view separator (no row-end tokens in OCR-2)
     prompt_len = 1 + n_image + len("\nFree OCR.")
 
     assert ids[0] == BOS_ID
@@ -37,39 +40,46 @@ def test_small_mode_layout_and_labels():
     assert int(item["images_seq_mask"].sum()) == n_image
     assert labels[:prompt_len] == [IGNORE_INDEX] * prompt_len
     assert labels[prompt_len:] == [1000 + ord("अ"), 1000 + ord("ब"), EOS_ID]
-    assert item["global_view"].shape == (1, 3, 640, 640)
-    assert not item[
-        "patches"
-    ].any()  # no tiles → zeros, which the model reads as "global view only"
+    assert item["global_view"].shape == (1, 3, 768, 768)  # stretched, as the model does
+    assert not item["patches"].any()  # no tiles: zeros mean "global view only" to the model
+
+
+def test_1024_view_has_256_queries():
+    encoded = encode_image(Image.new("RGB", (300, 60)), VIEW_1024)
+    assert encoded.num_tokens == 16 * 16 + 1
+    assert encoded.global_view.shape == (1, 3, 1024, 1024)
 
 
 def test_generation_prompt_has_no_target():
-    item = encode_sample(PROMPT, None, Image.new("RGB", (300, 60)), StubTokenizer(), SMALL)
+    item = encode_sample(PROMPT, None, Image.new("RGB", (300, 60)), StubTokenizer(), VIEW_768)
     assert (item["labels"] == IGNORE_INDEX).all()
     assert item["input_ids"][-1] != EOS_ID
 
 
-def test_gundam_tiles_a_full_page():
-    encoded = encode_image(Image.new("RGB", (1698, 2325)), GUNDAM)  # a golden FIR page size
-    assert encoded.tiles == (2, 3)
-    assert encoded.patches.shape == (6, 3, 640, 640)
-    assert encoded.num_tokens == 17 * 16 + 1 + 21 * 30  # global 16×(16+1)+1, tiles (10·2+1)×(10·3)
+def test_tiled_full_page():
+    encoded = encode_image(Image.new("RGB", (1698, 2325)), TILED)  # a golden FIR page size
+    assert encoded.tiles == (2, 3)  # closest grid with 2..6 tiles
+    assert encoded.patches.shape == (6, 3, 768, 768)
+    assert encoded.num_tokens == 16 * 16 + 1 + (12 * 2) * (12 * 3)
 
 
-def test_gundam_small_crop_uses_global_view_only():
-    encoded = encode_image(Image.new("RGB", (300, 60)), GUNDAM)
+def test_tiled_small_crop_uses_global_view_only():
+    encoded = encode_image(Image.new("RGB", (700, 120)), TILED)
     assert encoded.tiles == (1, 1)
-    assert encoded.num_tokens == 273
+    assert encoded.num_tokens == 257
     assert encoded.global_view.shape == (1, 3, 1024, 1024)
 
 
 def test_wide_image_gets_wide_grid():
-    assert encode_image(Image.new("RGB", (3000, 1000)), GUNDAM).tiles == (3, 1)
+    assert encode_image(Image.new("RGB", (3000, 1000)), TILED).tiles == (3, 1)
 
 
-def test_crop_mode_needs_640_tiles():
+@pytest.mark.parametrize(
+    ("base", "size", "crop"), [(1024, 640, False), (1024, 1024, True), (640, 768, True)]
+)
+def test_sizes_without_encoder_queries_are_rejected(base, size, crop):
     with pytest.raises(ValueError):
-        ImageConfig(base_size=1024, image_size=1024, crop_mode=True)
+        ImageConfig(base_size=base, image_size=size, crop_mode=crop)
 
 
 def test_to_tensor_normalises_to_minus_one_one():
@@ -81,8 +91,8 @@ def test_to_tensor_normalises_to_minus_one_one():
 
 def test_collate_right_pads_every_field():
     image = Image.new("RGB", (300, 60))
-    short = encode_sample(PROMPT, "अ", image, StubTokenizer(), SMALL)
-    long = encode_sample(PROMPT, "अबक", image, StubTokenizer(), SMALL)
+    short = encode_sample(PROMPT, "अ", image, StubTokenizer(), VIEW_768)
+    long = encode_sample(PROMPT, "अबक", image, StubTokenizer(), VIEW_768)
     batch = collate([short, long], pad_id=2)
 
     assert batch["input_ids"].shape == (2, len(long["input_ids"]))
