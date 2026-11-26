@@ -20,7 +20,7 @@ train = [
     "tensorboard>=2.18",
     # Experiment tracking (tracking/): on only when keys are in .env.
     "wandb>=0.18,<0.20",
-    "mlflow>=3.18,<4",
+    "mlflow[auth]>=3.18,<4",  # [auth]: login for the shared server
     # Imported by DeepSeek-OCR's own model code (trust_remote_code).
     "addict",
     "easydict",

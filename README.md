@@ -121,6 +121,8 @@ The model's own code needs transformers **4.46.3**, which is pinned. Do not upgr
 python -m dataEngine --config configs/data/training_data.toml golden                          # validate golden pages
 python -m dataEngine --config configs/data/training_data.toml split                           # lock train/dev/test
 python -m dataEngine --config configs/data/training_data.toml crops --source golden_regions   # region crops
+python -m dataEngine --config configs/data/training_data.toml crops --source mozhi_hi         # downloads/mozhi_hi (train/dev/test)
+python -m dataEngine --config configs/data/training_data.toml crops --source iiit_hw_dev      # downloads/iiit_hw_dev
 
 # 2. Check what a config will train (builds the model without weights)
 python -m training.inventory --config configs/stage1/1a_printed.toml
@@ -170,13 +172,12 @@ Every run is one TOML file in `configs/`: data engine (`configs/data/`), one tra
 - Per source, script and language: CER, WER, exact match, change vs before, gates, most improved/regressed items. On pages: page CER, layout AP/mAP@50, box IoU, block F1, reading order, valid output.
 - Predictions are cached per checkpoint while items, image mode, generation settings and weights are unchanged.
 
-**Before training, on the test data in `dataEngine/data/test_data`:**
+**Before training, on the test data:** golden test pages in `dataEngine/data/test_data/src_golden`, plus the test splits of Mozhi and IIIT-HW. The Mozhi and IIIT-HW test splits come from `crops --source mozhi_hi / iiit_hw_dev`, Quickstart step 1.
 
 ```bash
 python -m dataEngine --config configs/data/test_data.toml golden
 python -m dataEngine --config configs/data/test_data.toml split
 python -m dataEngine --config configs/data/test_data.toml --workers 8 crops --source golden_regions
-python -m dataEngine --config configs/data/test_data.toml --workers 8 crops --source printed_words
 torchrun --nproc_per_node=N -m evaluation --config configs/eval/test_data.toml --split test --checkpoint start
 ```
 

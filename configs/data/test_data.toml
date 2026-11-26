@@ -2,7 +2,6 @@
 #   python -m dataEngine --config configs/data/test_data.toml golden
 #   python -m dataEngine --config configs/data/test_data.toml split
 #   python -m dataEngine --config configs/data/test_data.toml --workers 8 crops --source golden_regions
-#   python -m dataEngine --config configs/data/test_data.toml --workers 8 crops --source printed_words
 
 seed = 1234
 
@@ -33,13 +32,5 @@ splits = "outputs/data/test/splits"
 data_root = "dataEngine/data/test_data/src_golden"
 out_dir = "outputs/data/test/crops/golden_regions"
 
-[[sources]]   # 10,173 printed Hindi words (Mozhi test set; test_data/cvit is an identical copy)
-name = "printed_words"
-converter = "labelled_folder"
-root = "dataEngine/data/test_data/mozhi"
-label_files = { test = "test_gt.txt" }
-separator = "\t"
-langs = ["hi"]
-script = "printed"
-level = "word"
-out_dir = "outputs/data/test/crops/printed_words"
+# Mozhi and IIIT-HW test words come from their official downloads: the test split of
+# `crops --source mozhi_hi / iiit_hw_dev` (configs/data/training_data.toml).

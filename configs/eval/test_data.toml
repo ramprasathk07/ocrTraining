@@ -21,20 +21,27 @@ prompts_dir = "report/prompts/eval"   # eval prompt registry + leaderboard
 no_repeat_ngram_size = 35   # the model's own eval setting
 seed = 1234
 
-[[eval.sources]]   # printed line CER (the set has words only)
+[[eval.sources]]   # printed Hindi words: Mozhi test split (crops --source mozhi_hi, training_data.toml)
 name = "printed_words"
 task = "crop_ocr"
-path = "outputs/data/test/crops/printed_words"
+path = "outputs/data/crops/mozhi_hi"
 limit = 200
 max_new_tokens = 128
 
 [[eval.sources]]   # same 200 words in a padded 1024 view: decides the 1A image mode (Stage 0)
 name = "printed_words_1024"
 task = "crop_ocr"
-path = "outputs/data/test/crops/printed_words"
+path = "outputs/data/crops/mozhi_hi"
 limit = 200
 max_new_tokens = 128
 image = { base_size = 1024, image_size = 1024, crop_mode = false }
+
+[[eval.sources]]   # handwritten Hindi words: IIIT-HW test split (crops --source iiit_hw_dev)
+name = "iiit_hw_dev"
+task = "crop_ocr"
+path = "outputs/data/crops/iiit_hw_dev"
+limit = 200
+max_new_tokens = 128
 
 [[eval.sources]]   # FIR region reading; regions are paragraph-sized, so tiles
 name = "golden_regions"
