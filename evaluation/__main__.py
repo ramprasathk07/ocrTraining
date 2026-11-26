@@ -199,10 +199,11 @@ def write_report(
     (out_dir / f"report_{split}.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    record_run(Path(raw["eval"]["prompts_dir"]), raw, split, labels, scores, prompts)
+    # last: local records are complete even if a tracker is unreachable
     tracking.log_eval(
         raw, split, labels, paths, scores, gate_results, out_dir / f"report_{split}.json"
     )
-    record_run(Path(raw["eval"]["prompts_dir"]), raw, split, labels, scores, prompts)
     for warning in warnings:
         log.warning("prompt mismatch: %s", warning)
     failed = sum(g["status"].startswith("fail") for row in gate_results for g in row)

@@ -31,3 +31,5 @@ downloads/
 mlflow.db
 mlruns/
 mlartifacts/
+# W&B writes its local run copies here
+wandb/

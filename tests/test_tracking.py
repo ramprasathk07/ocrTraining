@@ -4,13 +4,14 @@ import os
 import pytest
 
 import tracking
+from tracking import load_env  # the real one: conftest swaps tracking.load_env for a no-op
 
-TRACKER_VARS = [*tracking.TRACKERS.values(), "MLFLOW_EXPERIMENT_NAME", "FROM_ENV", "QUOTED"]
+TEST_VARS = ["MLFLOW_EXPERIMENT_NAME", "FROM_ENV", "QUOTED"]
 
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for variable in TRACKER_VARS:
+    for variable in TEST_VARS:
         monkeypatch.delenv(variable, raising=False)
 
 
@@ -21,7 +22,7 @@ def test_load_env_reads_values_and_keeps_the_shell(repo_tmp, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setenv("FROM_ENV", "shell")
-    tracking.load_env(env)
+    load_env(env)
     assert os.environ["WANDB_API_KEY"] == "abc=123"
     assert os.environ["QUOTED"] == "a b"
     assert os.environ["FROM_ENV"] == "shell"
@@ -29,7 +30,7 @@ def test_load_env_reads_values_and_keeps_the_shell(repo_tmp, monkeypatch):
 
 
 def test_load_env_without_file(repo_tmp):
-    tracking.load_env(repo_tmp / "missing.env")
+    load_env(repo_tmp / "missing.env")
     assert tracking.enabled() == []
 
 
@@ -74,6 +75,8 @@ def test_log_eval_without_trackers_does_nothing(repo_tmp):
 
 def test_log_eval_to_mlflow(repo_tmp, monkeypatch):
     mlflow = pytest.importorskip("mlflow")
+    # A folder store is enough to check the calls (MLflow 3 needs the opt-in; servers use SQLite)
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     monkeypatch.setenv("MLFLOW_TRACKING_URI", (repo_tmp / "mlruns").resolve().as_uri())
     monkeypatch.setenv("MLFLOW_EXPERIMENT_NAME", "test")
     raw, labels, paths, scores, gates, report = _eval_inputs(repo_tmp)

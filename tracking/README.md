@@ -33,7 +33,7 @@ Training and evaluation read `.env` at start. A variable already set in the shel
 
 ## Shared MLflow server for the team (GPU server, port 9898)
 
-The team opens it in a browser and logs in, with no SSH tunnel. Run these on the GPU server, inside the repo's venv: `requirements.txt` installs MLflow 2.x, server included.
+The team opens it in a browser and logs in, with no SSH tunnel. Run these on the GPU server, inside the repo's venv: `requirements.txt` installs MLflow 3.x, server included.
 
 **1. Login config, once.** Copy MLflow's default and change two lines:
 
@@ -43,7 +43,7 @@ mkdir -p ~/mlflow
 cp "$(python -c 'import mlflow.server.auth as a, pathlib; print(pathlib.Path(a.__file__).parent / "basic_auth.ini")')" ~/mlflow/auth.ini
 chmod 600 ~/mlflow/auth.ini
 nano ~/mlflow/auth.ini
-#   admin_password = <strong password>                            (the default is password1234)
+#   admin_password = <strong password>                            (uncomment: MLflow 3 has no default and won't start without one)
 #   database_uri   = sqlite:////home/<you>/mlflow/basic_auth.db   (absolute path: 4 slashes)
 ```
 
@@ -80,7 +80,12 @@ MLFLOW_TRACKING_PASSWORD=<password>
 MLFLOW_EXPERIMENT_NAME=hindi-fir-ocr
 ```
 
-**5. Team access:** open `http://<server-ip>:9898` and log in. If the page doesn't load, the server firewall is blocking the port. Open it for the team's network only, for example `sudo ufw allow from <team subnet> to any port 9898 proto tcp`, or ask the server admin.
+**5. Team access:** open `http://<server-ip>:9898` and log in.
+- **By IP on the LAN:** works as is. MLflow 3 accepts private IPs (10.\*, 192.168.\*, 172.16–31.\*) and localhost.
+- **By a hostname:** add `--allowed-hosts "<hostname>:9898,<server-ip>:9898"` to the server command.
+- **Checkpoints:** the training run lists them under **Logged models** (`checkpoint-1000`, …), not under Artifacts.
+
+If the page doesn't load, the server firewall is blocking the port. Open it for the team's network only, for example `sudo ufw allow from <team subnet> to any port 9898 proto tcp`, or ask the server admin.
 
 **Security:**
 - Anyone who can reach port 9898 sees the login page, so keep the port on the internal network or VPN.
