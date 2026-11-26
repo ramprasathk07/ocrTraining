@@ -23,3 +23,11 @@ __pycache__/
 # Downloads (partial browser downloads, dataset archives)
 *.crdownload
 downloads/
+
+# Tracker keys (W&B, MLflow): copy .env.example to .env
+.env
+
+# Local MLflow server data (`mlflow server` run from the repo root writes here)
+mlflow.db
+mlruns/
+mlartifacts/

@@ -11,6 +11,7 @@ adapter/ (LoRA weights) and merged/ (base + LoRA, the next stage's input).
 --merge turns any saved checkpoint (e.g. the best one by dev CER) into <checkpoint>/merged.
 --profile N records training steps 3 .. N+2 as Chrome traces in <output_dir>/profile/ and stops
 (training/profiling.py).
+W&B / MLflow: on when their keys are in .env (tracking/__init__.py).
 """
 
 import argparse
@@ -29,6 +30,7 @@ import transformers
 from torch.utils.data import SequentialSampler
 from transformers import Trainer, TrainingArguments, set_seed
 
+import tracking
 from models.deepseek_ocr.inputs import collate
 from models.deepseek_ocr.loader import load_model, load_tokenizer
 from training.config import RunConfig, grad_accum_steps, load_config
@@ -97,6 +99,9 @@ def train(cfg: RunConfig, config_path: Path, profile_steps: int | None = None) -
     tokenizer = load_tokenizer(cfg.model)
     model = apply_lora(load_model(cfg.model), cfg)
     train_ds, dev_ds, data_stats = build_datasets(cfg.data, tokenizer, cfg.image, cfg.train.seed)
+    trackers = [] if profiling else tracking.enabled()  # a profiling run is not an experiment
+    tracking.label_training_run(cfg.name, cfg.stage.id)
+    log.info("tracking: TensorBoard%s", "".join(f", {t}" for t in trackers))
 
     args = TrainingArguments(
         output_dir=str(cfg.train.output_dir),
@@ -121,7 +126,7 @@ def train(cfg: RunConfig, config_path: Path, profile_steps: int | None = None) -
         eval_steps=cfg.train.eval_steps,
         prediction_loss_only=True,  # never gather (batch × seq × 129K-vocab) logits
         label_names=["labels"],  # PeftModel's forward signature hides `labels` from the Trainer
-        report_to=["tensorboard"],
+        report_to=["tensorboard", *trackers],
         dataloader_num_workers=cfg.data.num_workers,
         remove_unused_columns=False,
         ddp_find_unused_parameters=False,  # every LoRA module runs on every token
@@ -187,6 +192,7 @@ def main() -> None:
     )
     if args.profile is not None and args.profile < 1:
         parser.error("--profile needs at least 1 step")
+    tracking.load_env()
     cfg = load_config(args.config)
     set_seed(cfg.train.seed)
     if args.smoke:

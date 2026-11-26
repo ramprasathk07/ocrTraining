@@ -11,6 +11,8 @@ python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/
 torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --profile 20  # traces, then stop
 ```
 
+W&B / MLflow: switched on by keys in `.env` ([tracking/](../tracking/README.md)). They log loss, learning rate and dev loss, and upload each checkpoint if `.env` asks for it. TensorBoard logs always.
+
 `--profile N` records steps 3…N+2 as Chrome traces in `<output_dir>/profile/` and then stops. It saves no model. How to run it on a server and read the trace: [docs/training-throughput.md §8](../docs/training-throughput.md#8-profiling-on-a-linux-gpu-server).
 
 ## Files

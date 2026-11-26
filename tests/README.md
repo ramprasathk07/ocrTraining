@@ -26,5 +26,7 @@ ruff check . && ruff format --check . && pytest   # what must pass before a comm
 | `test_report.py` | score grouping, gates, report |
 | `test_prompts.py` | eval prompt registry, leaderboard, prompt mismatch warnings |
 | `test_evaluation_runner.py` | end-to-end evaluation with a stub model |
+| `test_profiling.py` | `--profile`: labelled ranges, recorded steps, trace files |
+| `test_tracking.py` | `.env` loading, tracker switch, metric names; eval runs logged to a local MLflow store |
 
 Tests marked `needs_golden` read `dataEngine/data/test_data/src_golden`. That data is git-ignored, so on a fresh clone without it they are skipped, not failed.

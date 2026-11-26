@@ -11,6 +11,8 @@ torchrun --nproc_per_node=N -m evaluation --config configs/stage1/1a_printed.tom
     --checkpoint start --checkpoint outputs/runs/stage1a_printed/merged
 ```
 
+With W&B / MLflow keys in `.env` (see [tracking/](../tracking/README.md)), every evaluated checkpoint is also logged as one tracker run: its scores, gate results and `report_<split>.json`. This includes `--checkpoint start`, so the untrained baseline is on record. Predictions and the markdown report (they quote FIR text) are never sent.
+
 | Flag | Meaning |
 |---|---|
 | `--config` | any config with `[model]` and `[eval]` (a stage config or `configs/eval/*.toml`) |

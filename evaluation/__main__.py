@@ -14,7 +14,8 @@ the split files and the image root. Items are a fixed, seeded sample, sharded ac
 Per checkpoint: predictions.jsonl + scores.json (reused while nothing changed).
 Rank 0 writes [eval].report_dir/report_<split>.md and .json, with gates. Predictions (raw
 FIR text) stay under [eval].output_dir; the report holds scores only, plus examples when
-comparing checkpoints.
+comparing checkpoints. With W&B / MLflow keys in .env, each checkpoint's scores and gates
+(not predictions or examples) are also logged as one tracker run (tracking/__init__.py).
 """
 
 import argparse
@@ -31,6 +32,7 @@ import torch
 from accelerate import PartialState
 from accelerate.utils import gather_object
 
+import tracking
 from dataEngine.tasks import get_task, page_blocks, read_split
 from evaluation.prompts import drift_warnings, prompts_used, record_run
 from evaluation.report import biggest_changes, check_gate, markdown_report, score, validate_gates
@@ -197,6 +199,9 @@ def write_report(
     (out_dir / f"report_{split}.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    tracking.log_eval(
+        raw, split, labels, paths, scores, gate_results, out_dir / f"report_{split}.json"
+    )
     record_run(Path(raw["eval"]["prompts_dir"]), raw, split, labels, scores, prompts)
     for warning in warnings:
         log.warning("prompt mismatch: %s", warning)
@@ -217,6 +222,7 @@ def main(argv: list[str] | None = None) -> None:
         "--split", choices=["dev", "test"], default="dev", help="test only for reports"
     )
     args = parser.parse_args(argv)
+    tracking.load_env()
     state = PartialState()
     logging.basicConfig(level=logging.INFO if state.is_main_process else logging.WARNING)
     raw = tomllib.loads(args.config.read_text(encoding="utf-8"))

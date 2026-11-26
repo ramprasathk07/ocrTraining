@@ -40,6 +40,7 @@ training/             config → deterministic data plan → LoRA training (1..N
   stages.py             python -m training.stages: the stage tree from the configs
   lora.py / inventory.py / smoke.py / prompts.py
 evaluation/           before/after runner (sharded), page metrics, report with gates, prompt leaderboard
+tracking/             W&B + MLflow logging for training and evaluation, switched on by keys in .env
 configs/
   data/                 data engine: training_data.toml, test_data.toml
   stage1/               one run config per sub-stage: 1a_printed, 1b_handwritten, 1c_joint
@@ -50,7 +51,7 @@ outputs/              data, checkpoints, predictions (git-ignored)
 report/               evaluation reports (git-ignored); report/prompts/ tracked
 ```
 
-Each folder has its own README: [configs](configs/README.md) · [dataEngine](dataEngine/README.md) · [models](models/README.md) · [training](training/README.md) · [evaluation](evaluation/README.md) · [report](report/README.md) · [tests](tests/README.md) · [docs](docs/README.md).
+Each folder has its own README: [configs](configs/README.md) · [dataEngine](dataEngine/README.md) · [models](models/README.md) · [training](training/README.md) · [evaluation](evaluation/README.md) · [tracking](tracking/README.md) · [report](report/README.md) · [tests](tests/README.md) · [docs](docs/README.md).
 
 ## Stages and training types
 
@@ -108,6 +109,7 @@ pip install -e .[dev]
 ```bash
 pip install -r requirements.txt                          # pyproject.toml [train,dev] + the CUDA 11.8 torch index
 pip install flash-attn==2.7.3 --no-build-isolation      # or set attn_implementation = "eager"
+cp .env.example .env                                    # optional: W&B / MLflow keys (tracking/)
 ```
 
 The model's own code needs transformers **4.46.3**, which is pinned. Do not upgrade it.
@@ -183,6 +185,15 @@ Flags, metric definitions, output paths and caching: [evaluation/README.md](eval
 ## Prompt versions
 
 Prompts are defined once, in `dataEngine/tasks.py`; a version is a hash of the exact text. Training runs register theirs in `report/prompts/training/` (`runs.md`), evaluations in `report/prompts/eval/` (`leaderboard.md`), and reports flag a checkpoint evaluated with a prompt it was not trained on. Details: [report/README.md](report/README.md).
+
+## Experiment tracking (W&B, MLflow)
+
+`cp .env.example .env` and fill in the keys. A tracker is on when its key (`WANDB_API_KEY`) or server (`MLFLOW_TRACKING_URI`) is set.
+- **Training:** loss, learning rate, dev loss, and each saved checkpoint, through the HF Trainer integrations.
+- **Evaluation:** one run per checkpoint, with scores, gates and `report_<split>.json`. `--checkpoint start` logs the untrained baseline too.
+- **Never sent:** predictions and markdown reports, because they quote FIR text.
+
+Details: [tracking/README.md](tracking/README.md).
 
 ## Multi-GPU
 
