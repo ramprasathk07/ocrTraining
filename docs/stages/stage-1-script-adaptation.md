@@ -78,7 +78,7 @@ Each sub-stage loads the previous merged checkpoint and adds a **fresh** adapter
 
 | | 1A printed | 1B handwritten | 1C joint |
 |---|---|---|---|
-| `mozhi_hi` (printed Hindi words + lines) | 100% | — | 30% |
+| `mozhi_hi` (printed Hindi words; Mozhi has no lines) | 100% | — | 30% |
 | `iiit_hw_dev` (handwritten Hindi words) | — | 50% | 15% |
 | `dohascript` (handwritten Hindi lines) | — | 25% | 10% |
 | `iam_lines` (handwritten English lines) | — | 25% | 5% |
