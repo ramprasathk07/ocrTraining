@@ -1,9 +1,11 @@
 """Official archives laid out as images plus one label file per split (IIIT-HW-Dev, Mozhi).
 
-Each label-file line is `<image path relative to root><separator><text>`, split on the first
-separator. Set `root`, `label_files` and `separator` in the source config after reading the
-archive's README. Nothing here guesses a format: bad lines or images fail loudly unless the
-source sets `drop_invalid = true`, and then every dropped row is listed in problems.json.
+Each label-file line is `<image path relative to the label file's folder><separator><text>`,
+split on the first separator (Mozhi and IIIT-HW unzip to train/, val/, test/, each with its own
+images/ and *_gt.txt). Set `root`, `label_files` and `separator` in the source config after
+reading the archive's README. Nothing here guesses a format: bad lines or images fail loudly
+unless the source sets `drop_invalid = true`, and then every dropped row is listed in
+problems.json.
 """
 
 import json
@@ -50,14 +52,16 @@ def convert(source: dict, out_dir: Path, workers: int) -> int:
     root = Path(source["root"])
     records, problems = [], []
     for split, label_file in source["label_files"].items():
-        rows = read_label_file(root / label_file, source["separator"])
-        shards = [(root, rows[i::workers]) for i in range(max(workers, 1))]
+        label_path = root / label_file
+        base = label_path.parent
+        rows = read_label_file(label_path, source["separator"])
+        shards = [(base, rows[i::workers]) for i in range(max(workers, 1))]
         bad = {n: p for shard in parallel_map(_check_rows, shards, workers) for n, p in shard}
         problems += [{"split": split, "line": n, "problem": p} for n, p in sorted(bad.items())]
         records += [
             CropRecord(
                 id=f"{source['name']}/{split}/{number:07d}",
-                image=relative_path(root / image, out_dir),
+                image=relative_path(base / image, out_dir),
                 text=normalize_text(text),
                 langs=tuple(source["langs"]),
                 script=source["script"],

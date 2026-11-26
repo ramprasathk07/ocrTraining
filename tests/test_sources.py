@@ -13,16 +13,19 @@ from dataEngine.text import normalize_text
 
 
 def _toy_archive(root, missing_image=False):
+    """train label file at the root; dev in its own folder with its own images (Mozhi layout)."""
     (root / "img").mkdir(parents=True)
-    for i in range(3):
+    (root / "val" / "img").mkdir(parents=True)
+    for i in range(2):
         if not (missing_image and i == 1):
             Image.new("RGB", (20, 10), "white").save(root / "img" / f"{i}.png")
+    Image.new("RGB", (20, 10), "white").save(root / "val" / "img" / "2.png")
     (root / "train.txt").write_text("img/0.png\tनमस्ते\nimg/1.png\tथाना\n", encoding="utf-8")
-    (root / "val.txt").write_text("img/2.png\tक़\n", encoding="utf-8")
+    (root / "val" / "val.txt").write_text("img/2.png\tक़\n", encoding="utf-8")
     return {
         "name": "toy",
         "root": str(root),
-        "label_files": {"train": "train.txt", "dev": "val.txt"},
+        "label_files": {"train": "train.txt", "dev": "val/val.txt"},
         "separator": "\t",
         "langs": ["hi"],
         "script": "handwritten",
@@ -42,6 +45,8 @@ def test_labelled_folder_converts_every_split(repo_tmp):
     ]
     assert records[0].text == normalize_text("क़")
     assert (out / records[1].image).resolve() == (repo_tmp / "raw" / "img" / "0.png").resolve()
+    dev_image = repo_tmp / "raw" / "val" / "img" / "2.png"
+    assert (out / records[0].image).resolve() == dev_image.resolve()
 
 
 def test_labelled_folder_fails_loudly_then_drops_only_when_allowed(repo_tmp):

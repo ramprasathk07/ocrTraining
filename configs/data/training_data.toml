@@ -24,27 +24,26 @@ data_root = "dataEngine/data/train"
 out_dir = "outputs/data/crops/golden_regions"
 
 # Official public sets (docs/training-plan.md §8). Names must match the Stage 1 configs.
-# Unzip train.zip, val.zip and test.zip of one set into the same folder (one images/ + three
-# *_gt.txt). The ilocr pages state "<image name><TAB><text>"; the local Mozhi test copy has
-# lines "images/<name>.jpeg<TAB><text>". Check the first line of each *_gt.txt before converting.
+# Unzip train.zip, val.zip and test.zip of one set inside its root: each makes <split>/ with
+# images/ and <split>_gt.txt, lines "images/<file><TAB><text>" (zips checked 2026-11-26).
 
-[[sources]]   # printed Hindi words, CC BY 4.0, https://ilocr.iiit.ac.in/dataset/7/
+[[sources]]   # printed Hindi words, 79,762 / 10,114 / 10,173, CC BY 4.0, https://ilocr.iiit.ac.in/dataset/7/
 name = "mozhi_hi"
 converter = "labelled_folder"
 root = "downloads/mozhi_hi"
-label_files = { train = "train_gt.txt", dev = "val_gt.txt", test = "test_gt.txt" }
-separator = "	"
+label_files = { train = "train/train_gt.txt", dev = "val/val_gt.txt", test = "test/test_gt.txt" }
+separator = "\t"
 langs = ["hi"]
 script = "printed"
 level = "word"
 out_dir = "outputs/data/crops/mozhi_hi"
 
-[[sources]]   # handwritten Hindi words (IIIT-INDIC-HW-WORDS-Hindi), CC BY 4.0, https://ilocr.iiit.ac.in/dataset/18/
+[[sources]]   # handwritten Hindi words (IIIT-INDIC-HW-WORDS-Hindi), 69,853 / 12,708 / 12,869, CC BY 4.0, https://ilocr.iiit.ac.in/dataset/18/
 name = "iiit_hw_dev"
 converter = "labelled_folder"
 root = "downloads/iiit_hw_dev"
-label_files = { train = "train_gt.txt", dev = "val_gt.txt", test = "test_gt.txt" }
-separator = "	"
+label_files = { train = "train/train_gt.txt", dev = "val/val_gt.txt", test = "test/test_gt.txt" }
+separator = "\t"
 langs = ["hi"]
 script = "handwritten"
 level = "word"
