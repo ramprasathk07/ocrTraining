@@ -8,7 +8,10 @@ python -m training.inventory --config configs/stage1/1a_printed.toml            
 torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --smoke   # smoke tests
 torchrun --nproc_per_node=N -m training --config configs/stage1/1a_printed.toml           # train
 python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/stage1a_printed/checkpoint-3000
+torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --profile 20  # traces, then stop
 ```
+
+`--profile N` records steps 3…N+2 as Chrome traces in `<output_dir>/profile/` and then stops. It saves no model. How to run it on a server and read the trace: [docs/training-throughput.md §8](../docs/training-throughput.md#8-profiling-on-a-linux-gpu-server).
 
 ## Files
 
@@ -20,6 +23,7 @@ python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/
 | `lora.py` | `apply_lora` (rank/alpha per group), `build_optimizer` (one learning rate per group; fails if a group matches nothing) |
 | `inventory.py` | parameters per component and LoRA ranks, built on the meta device |
 | `smoke.py` | smoke checks S3–S9 (below), written to `smoke.json` |
+| `profiling.py` | `--profile N`: torch profiler over the first steps, named ranges per model part, one trace per rank |
 | `prompts.py` | training prompt registry: `report/prompts/training/` |
 | `stages.py` | `python -m training.stages`: the stage tree from the configs; fails on duplicate ids, unknown parents or cycles |
 
@@ -59,6 +63,7 @@ python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/
 | `smoke.json` | smoke check results |
 | `adapter/` | final LoRA weights |
 | `merged/` | base + LoRA in one model: the next stage's input |
+| `profile/` | `--profile` runs only: `rank<r>.json.gz` (open in ui.perfetto.dev or chrome://tracing) + `rank<r>_top_ops.txt` |
 
 On start, rank 0 also appends the run to `report/prompts/training/` (`registry.json`, `history.jsonl`, `runs.md`).
 

@@ -1,0 +1,5 @@
+# GPU machine (CUDA 11.8): pip install -r requirements.txt   (run from the repo root)
+# Package versions live in pyproject.toml; this file only adds the CUDA 11.8 torch index.
+# flash-attn is installed separately after this (see README "Setup").
+--extra-index-url https://download.pytorch.org/whl/cu118
+-e .[train,dev]

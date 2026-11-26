@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# GPU machine. Install torch first from the CUDA index (see README).
+# GPU machine: pip install -r requirements.txt (adds the CUDA 11.8 torch index).
 train = [
     "torch==2.6.0",
     "torchvision==0.21.0",

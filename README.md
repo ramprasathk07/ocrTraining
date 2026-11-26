@@ -22,7 +22,7 @@ Training runs in stages. Each stage adds a fresh LoRA adapter to the previous me
 | 4 | Reading + translation in one model | [stage-4](docs/stages/stage-4-joint-ocr-translation.md) |
 | 5 | Final test, compression, renderer hand-off | [stage-5](docs/stages/stage-5-release.md) |
 
-The full plan, with decisions, datasets, gates and timeline, is in [docs/training-plan.md](docs/training-plan.md). The tokenizer findings are in [docs/tokenizer-check.md](docs/tokenizer-check.md).
+The full plan, with decisions, datasets, gates and timeline, is in [docs/training-plan.md](docs/training-plan.md). The tokenizer findings are in [docs/tokenizer-check.md](docs/tokenizer-check.md). Training speed (bottlenecks, kernels, profiling): [docs/training-throughput.md](docs/training-throughput.md).
 
 ## Repository layout
 
@@ -106,8 +106,7 @@ pip install -e .[dev]
 **GPU machine (CUDA 11.8):**
 
 ```bash
-pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu118
-pip install -e .[train,dev]
+pip install -r requirements.txt                          # pyproject.toml [train,dev] + the CUDA 11.8 torch index
 pip install flash-attn==2.7.3 --no-build-isolation      # or set attn_implementation = "eager"
 ```
 
@@ -126,6 +125,7 @@ python -m training.inventory --config configs/stage1/1a_printed.toml
 
 # 3. Smoke tests on one GPU (needs only the golden crops)
 torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --smoke
+torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --profile 20   # Chrome traces of steps 3-22
 
 # 4. Evaluate before training (the run's starting model)
 torchrun --nproc_per_node=N -m evaluation --config configs/stage1/1a_printed.toml --checkpoint start

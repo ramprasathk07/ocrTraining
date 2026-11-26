@@ -30,16 +30,17 @@ Run the steps in that order. `--workers N` uses N CPU processes and gives the sa
 
 ```
 data/
-  <District>_<Station>_PS_<case>_<yy>/      one golden FIR document
-    manifest.json
-    pages/page_0001/
-      page.json                              size, document id
-      png/page.png                           the model image
-      image/page_regions.png                 boxes drawn in: never shown to a model
-      layout_detection/regions.json          boxes, IndicDLP labels
-      source_language_extraction/page.json   source text, reading order, status
-      eng_translation/page.json              English per region
-      regions/                               region crops
+  train/                                     golden FIR documents for training (configs/data/training_data.toml)
+    <District>_<Station>_PS_<case>_<yy>/      one golden FIR document
+      manifest.json
+      pages/page_0001/
+        page.json                              size, document id
+        png/page.png                           the model image
+        image/page_regions.png                 boxes drawn in: never shown to a model
+        layout_detection/regions.json          boxes, IndicDLP labels
+        source_language_extraction/page.json   source text, reading order, status
+        eng_translation/page.json              English per region
+        regions/                               region crops
   test_data/
     src_golden/                              49 golden pages kept for testing only
     mozhi/                                   Mozhi printed Hindi test words (images/ + test_gt.txt)

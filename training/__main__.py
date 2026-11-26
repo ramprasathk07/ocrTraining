@@ -3,11 +3,14 @@
     torchrun --nproc_per_node=N -m training --config configs/stage1/1a_printed.toml
     torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --smoke
     python -m training --config configs/stage1/1a_printed.toml --merge <checkpoint dir>
+    torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --profile 20
 
 The config fixes the global batch; gradient accumulation is derived from the GPU count.
 Outputs in [train].output_dir: checkpoints, TensorBoard logs, run_manifest.json,
 adapter/ (LoRA weights) and merged/ (base + LoRA, the next stage's input).
 --merge turns any saved checkpoint (e.g. the best one by dev CER) into <checkpoint>/merged.
+--profile N records training steps 3 .. N+2 as Chrome traces in <output_dir>/profile/ and stops
+(training/profiling.py).
 """
 
 import argparse
@@ -31,6 +34,7 @@ from models.deepseek_ocr.loader import load_model, load_tokenizer
 from training.config import RunConfig, grad_accum_steps, load_config
 from training.data import build_datasets
 from training.lora import apply_lora, build_optimizer
+from training.profiling import ProfileSteps, label_modules
 from training.prompts import register_training_run, training_prompts
 from training.smoke import run_smoke, write_report
 
@@ -84,7 +88,8 @@ def _write_manifest(cfg: RunConfig, world_size: int, accum: int, data_stats: dic
     )
 
 
-def train(cfg: RunConfig, config_path: Path) -> None:
+def train(cfg: RunConfig, config_path: Path, profile_steps: int | None = None) -> None:
+    profiling = profile_steps is not None
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     accum = grad_accum_steps(
         cfg.train.global_batch_size, cfg.train.per_device_batch_size, world_size
@@ -110,7 +115,7 @@ def train(cfg: RunConfig, config_path: Path) -> None:
         gradient_checkpointing=cfg.train.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_steps=cfg.train.logging_steps,
-        save_strategy="steps",
+        save_strategy="no" if profiling else "steps",  # a profiling run saves no model
         save_steps=cfg.train.save_steps,
         eval_strategy="steps",
         eval_steps=cfg.train.eval_steps,
@@ -129,10 +134,16 @@ def train(cfg: RunConfig, config_path: Path) -> None:
         data_collator=partial(collate, pad_id=tokenizer.pad_token_id),
         optimizers=(build_optimizer(model, cfg), None),  # per-group LRs; Trainer adds the schedule
     )
-    if trainer.is_world_process_zero():
+    if profiling:
+        label_modules(model)
+        trainer.add_callback(ProfileSteps(profile_steps, cfg.train.output_dir / "profile"))
+    elif trainer.is_world_process_zero():
         _write_manifest(cfg, world_size, accum, data_stats)
         register_training_run(cfg, config_path)
     trainer.train()
+    if profiling:
+        log.info("profile traces in %s", cfg.train.output_dir / "profile")
+        return
 
     trainer.save_model(str(cfg.train.output_dir / "adapter"))
     if trainer.is_world_process_zero():
@@ -165,12 +176,17 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true", help="run the Stage 0 smoke tests and exit")
     parser.add_argument("--merge", type=Path, help="merge this checkpoint's adapter and exit")
+    parser.add_argument(
+        "--profile", type=int, metavar="N", help="trace training steps 3..N+2, then stop"
+    )
     args = parser.parse_args()
     rank = int(os.environ.get("RANK", 0))
     logging.basicConfig(
         level=logging.INFO if rank == 0 else logging.WARNING,
         format=f"%(asctime)s rank{rank} %(levelname)s %(name)s: %(message)s",
     )
+    if args.profile is not None and args.profile < 1:
+        parser.error("--profile needs at least 1 step")
     cfg = load_config(args.config)
     set_seed(cfg.train.seed)
     if args.smoke:
@@ -178,7 +194,7 @@ def main() -> None:
     elif args.merge:
         merge(cfg, args.merge)
     else:
-        train(cfg, args.config)
+        train(cfg, args.config, args.profile)
 
 
 if __name__ == "__main__":
