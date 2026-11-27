@@ -9,6 +9,7 @@ The config fixes the global batch; gradient accumulation is derived from the GPU
 Outputs in [train].output_dir: checkpoints, TensorBoard logs, run_manifest.json,
 adapter/ (LoRA weights) and merged/ (base + LoRA, the next stage's input).
 --merge turns any saved checkpoint (e.g. the best one by dev CER) into <checkpoint>/merged.
+--resume continues an interrupted run from the last checkpoint-N in output_dir.
 --profile N records training steps 3 .. N+2 as Chrome traces in <output_dir>/profile/ and stops
 (training/profiling.py).
 W&B / MLflow: on when their keys are in .env (tracking/__init__.py).
@@ -29,6 +30,7 @@ import torch
 import transformers
 from torch.utils.data import SequentialSampler
 from transformers import Trainer, TrainingArguments, set_seed
+from transformers.trainer_utils import get_last_checkpoint
 
 import tracking
 from models.deepseek_ocr.inputs import collate
@@ -90,7 +92,9 @@ def _write_manifest(cfg: RunConfig, world_size: int, accum: int, data_stats: dic
     )
 
 
-def train(cfg: RunConfig, config_path: Path, profile_steps: int | None = None) -> None:
+def train(
+    cfg: RunConfig, config_path: Path, profile_steps: int | None = None, resume: bool = False
+) -> None:
     profiling = profile_steps is not None
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     accum = grad_accum_steps(
@@ -145,7 +149,16 @@ def train(cfg: RunConfig, config_path: Path, profile_steps: int | None = None) -
     elif trainer.is_world_process_zero():
         _write_manifest(cfg, world_size, accum, data_stats)
         register_training_run(cfg, config_path)
-    trainer.train()
+    last = None
+    if resume and cfg.train.output_dir.is_dir():
+        last = get_last_checkpoint(str(cfg.train.output_dir))
+    if resume:
+        log.info("resuming from %s", last or "the start: no checkpoint yet")
+    if last:
+        # Trainer's torch.load of rng_state.pth (numpy arrays) fails under torch >= 2.6's
+        # weights_only default; the checkpoint is this run's own output
+        os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+    trainer.train(resume_from_checkpoint=last)  # the planned order makes the skipped batches exact
     if profiling:
         log.info("profile traces in %s", cfg.train.output_dir / "profile")
         return
@@ -184,6 +197,9 @@ def main() -> None:
     parser.add_argument(
         "--profile", type=int, metavar="N", help="trace training steps 3..N+2, then stop"
     )
+    parser.add_argument(
+        "--resume", action="store_true", help="continue from the last checkpoint in output_dir"
+    )
     args = parser.parse_args()
     rank = int(os.environ.get("RANK", 0))
     logging.basicConfig(
@@ -200,7 +216,7 @@ def main() -> None:
     elif args.merge:
         merge(cfg, args.merge)
     else:
-        train(cfg, args.config, args.profile)
+        train(cfg, args.config, args.profile, args.resume)
 
 
 if __name__ == "__main__":

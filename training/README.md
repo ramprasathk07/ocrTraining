@@ -7,6 +7,7 @@ python -m training.stages                                                       
 python -m training.inventory --config configs/stage1/1a_printed.toml             # what LoRA will train (no download)
 torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --smoke   # smoke tests
 torchrun --nproc_per_node=N -m training --config configs/stage1/1a_printed.toml           # train
+torchrun --nproc_per_node=N -m training --config configs/stage1/1a_printed.toml --resume  # continue from the last checkpoint-N
 python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/stage1a_printed/checkpoint-3000
 torchrun --nproc_per_node=1 -m training --config configs/stage1/1a_printed.toml --profile 20  # traces, then stop
 ```
@@ -19,7 +20,7 @@ W&B / MLflow: switched on by keys in `.env` ([tracking/](../tracking/README.md))
 
 | File | Does |
 |---|---|
-| `__main__.py` | entry point: `train` / `--smoke` / `--merge`; deterministic sampler; writes `run_manifest.json`; registers prompts |
+| `__main__.py` | entry point: `train` / `--resume` / `--smoke` / `--merge`; deterministic sampler; writes `run_manifest.json`; registers prompts |
 | `config.py` | loads and validates a run config (`[stage]`, `[model]`, `[image]`, `[lora]`, `[train]`, `[data]`, `[smoke]`); `grad_accum_steps` |
 | `data.py` | `plan_samples`: the whole sample order (shares, curriculum phases, epochs) built once from the seed; `TaskDataset`; long targets dropped and counted |
 | `lora.py` | `apply_lora` (rank/alpha per group), `build_optimizer` (one learning rate per group; fails if a group matches nothing) |
