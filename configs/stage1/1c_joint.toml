@@ -1,4 +1,4 @@
-# Stage 1C — joint printed + handwritten, with the golden FIR regions (docs/stages/stage-1-script-adaptation.md)
+# Stage 1C — joint printed + handwritten, with the golden regions (docs/stages/stage-1-script-adaptation.md)
 # Starts from 1B merged; balanced printed/handwritten replay plus golden regions.
 #   torchrun --nproc_per_node=N -m training   --config configs/stage1/1c_joint.toml
 #   torchrun --nproc_per_node=N -m evaluation --config configs/stage1/1c_joint.toml \
@@ -11,7 +11,7 @@ name = "stage1c_joint"
 
 [stage]
 id = "1C"
-description = "joint printed + handwritten replay with golden FIR regions"
+description = "joint printed + handwritten replay with golden regions"
 starts_from = "1B"   # [model].name_or_path is its merged output ("base" = original OCR-2)
 
 [model]   # start: 1B merged
@@ -59,7 +59,7 @@ dev_size = 2000
 max_target_tokens = 1536
 num_workers = 8
 
-[[data.sources]]   # your FIR regions (~21K train): only in 1C
+[[data.sources]]   # golden regions (~21K train): only in 1C
 name = "golden_regions"
 path = "outputs/data/crops/golden_regions"
 share = 0.40
@@ -138,7 +138,7 @@ limit = 2000
 max_new_tokens = 1536
 
 # Gates vs the first --checkpoint (here: start = 1B merged). Proposed values.
-[[eval.gates]]   # FIR regions are the point of 1C
+[[eval.gates]]   # golden regions are the point of 1C
 group = "source=golden_regions"
 metric = "cer"
 max_relative_change = -0.10

@@ -25,11 +25,11 @@ Training and evaluation read `.env` at start. A variable already set in the shel
 - **MLflow:** runs carry the tags `config`, `stage` and `kind` (`train` / `eval`). Filter in the UI with, for example, `tags.stage = "1A"`.
 
 **Not logged:**
-- Predictions and `report_<split>.md`, because they quote FIR text.
+- Predictions and `report_<split>.md`, because they quote private text.
 - `--smoke` and `--profile` runs.
 - `merged/` models (6.7 GB each).
 
-**Privacy:** checkpoints from Stage 1C on are trained on golden FIR data (personal information). Upload them only to a server your team controls, or set the two upload variables to `false` / `FALSE`.
+**Privacy:** checkpoints from Stage 1C on are trained on golden data (personal information). Upload them only to a server your team controls, or set the two upload variables to `false` / `FALSE`.
 
 ## Shared MLflow server for the team (GPU server, port 9898)
 
@@ -77,7 +77,7 @@ New users can read every experiment (`default_permission = READ`): teammates can
 MLFLOW_TRACKING_URI=http://127.0.0.1:9898
 MLFLOW_TRACKING_USERNAME=trainer
 MLFLOW_TRACKING_PASSWORD=<password>
-MLFLOW_EXPERIMENT_NAME=hindi-fir-ocr
+MLFLOW_EXPERIMENT_NAME=hindi-doc-ocr
 ```
 
 **5. Team access:** open `http://<server-ip>:9898` and log in.
@@ -90,6 +90,6 @@ If the page doesn't load, the server firewall is blocking the port. Open it for 
 **Security:**
 - Anyone who can reach port 9898 sees the login page, so keep the port on the internal network or VPN.
 - Plain HTTP sends passwords and data unencrypted. For access from outside, put HTTPS (e.g. nginx) in front.
-- Every logged-in user can download uploaded checkpoints, including Stage 1C+ models trained on FIR data.
+- Every logged-in user can download uploaded checkpoints, including Stage 1C+ models trained on golden data.
 
 Code: `__init__.py` (`load_env`, `enabled`, `log_eval`). Tests: `tests/test_tracking.py`.

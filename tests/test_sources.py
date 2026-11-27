@@ -20,7 +20,7 @@ def _toy_archive(root, missing_image=False):
         if not (missing_image and i == 1):
             Image.new("RGB", (20, 10), "white").save(root / "img" / f"{i}.png")
     Image.new("RGB", (20, 10), "white").save(root / "val" / "img" / "2.png")
-    (root / "train.txt").write_text("img/0.png\tनमस्ते\nimg/1.png\tथाना\n", encoding="utf-8")
+    (root / "train.txt").write_text("img/0.png\tनमस्ते\nimg/1.png\tपत्र\n", encoding="utf-8")
     (root / "val" / "val.txt").write_text("img/2.png\tक़\n", encoding="utf-8")
     return {
         "name": "toy",

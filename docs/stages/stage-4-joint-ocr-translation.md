@@ -53,7 +53,7 @@ If Stage 3 failed its gate or was cut, skip Step 1 and run J0 directly.
 | 45% | Bilingual page parse | Golden train pages |
 | 15% | Source-only page parse | Golden train pages, so the source-only mode keeps working |
 | 15% | Bilingual crop | Golden train region crops |
-| 15% | Text-only translation replay | Stage 3 data: BPCC hi↔en, golden pairs, FIR terms. Keeps translation from fading while image tasks dominate |
+| 15% | Text-only translation replay | Stage 3 data: BPCC hi↔en, golden pairs, domain terms. Keeps translation from fading while image tasks dominate |
 | 10% | Crop OCR replay | Stage 1 mixture |
 
 ### Task format

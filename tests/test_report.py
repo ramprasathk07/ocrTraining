@@ -24,7 +24,7 @@ def _pred(item_id, target, prediction, script="handwritten", langs=("hi",), sour
 def test_score_groups_and_rates():
     scores = score(
         [
-            _pred("a", "थाना", "थाना"),
+            _pred("a", "पत्र", "पत्र"),
             _pred("b", "abcd", "", script="printed", langs=("en",)),
         ]
     )
@@ -91,9 +91,9 @@ def test_page_items_get_page_metrics_under_their_source():
         "script": "page",
         "langs": ["hi"],
         "target": "",
-        "prediction": "<|ref|>header<|/ref|><|det|>[[0, 0, 100, 100]]<|/det|>" + "\n" + "थाना",
+        "prediction": "<|ref|>header<|/ref|><|det|>[[0, 0, 100, 100]]<|/det|>" + "\n" + "पत्र",
         "finished": True,
-        "blocks": [{"label": "header", "box": [0, 0, 100, 100], "text": "थाना"}],
+        "blocks": [{"label": "header", "box": [0, 0, 100, 100], "text": "पत्र"}],
     }
     scores = score([_pred("a", "abcd", "abcd"), page])
     assert scores["source=golden_pages"]["page_cer"] == 0.0

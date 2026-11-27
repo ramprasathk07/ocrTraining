@@ -31,7 +31,7 @@ def inventory(pages: list[PageRecord]) -> dict:
         "documents": len({p.document_id for p in pages}),
         "pages": len(pages),
         "regions": len(blocks),
-        "pages_per_station": dict(sorted(Counter(p.station_key for p in pages).items())),
+        "pages_per_group": dict(sorted(Counter(p.group_key for p in pages).items())),
         "regions_per_language": dict(Counter(lang for b in blocks for lang in b.langs)),
         "regions_per_status": dict(Counter(b.status for b in blocks)),
         "regions_per_label": dict(Counter(b.label for b in blocks).most_common()),
@@ -43,11 +43,20 @@ def _write_json(path: Path, data: object) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def read_overrides(golden: dict) -> dict[str, list[str]]:
+    """Document id → [region, unit] for ids the pattern cannot split. They name real places, so
+    they live in a git-ignored TOML file next to the data, not in the config."""
+    path = golden.get("overrides_file")
+    if path is None or not Path(path).is_file():
+        return {}
+    return tomllib.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def run_golden(cfg: dict, workers: int) -> None:
     golden = cfg["golden"]
     data_root, out_dir = Path(golden["data_root"]), Path(golden["out_dir"])
     documents = sorted(p for p in data_root.iterdir() if (p / "manifest.json").is_file())
-    overrides = golden.get("station_overrides", {})
+    overrides = read_overrides(golden)
     convert = partial(convert_document, data_root=data_root, overrides=overrides)
     results = parallel_map(convert, documents, workers)
     pages = [page for doc_pages, _ in results for page in doc_pages]
@@ -89,9 +98,9 @@ def run_split(cfg: dict) -> None:
     )
     write_splits(assignment, info, Path(split["out_dir"]))
     log.info(
-        "split: %s pages; stations split by document: %s",
+        "split: %s pages; groups split by document: %s",
         info["pages"],
-        info["stations_split_by_document"],
+        info["groups_split_by_document"],
     )
 
 

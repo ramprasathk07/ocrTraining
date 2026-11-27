@@ -1,6 +1,6 @@
 # report/
 
-Human-readable results. Git tracks only `report/prompts/` and this README. Every other report quotes FIR text and stays local.
+Human-readable results. Git tracks only `report/prompts/` and this README. Every other report quotes private text and stays local.
 
 ```
 report/

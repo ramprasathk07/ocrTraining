@@ -1,17 +1,17 @@
 # HindiDoc-OCR V1 — Training Plan
 
-Fine-tune **DeepSeek-OCR (3B)** so that one model reads **Hindi + English** police documents — printed and handwritten — and returns **grounded bilingual blocks**. Each block has a box, a layout label, a reading order, the source text and an English translation. A separate, non-AI renderer turns those blocks into the translated PDF.
+Fine-tune **DeepSeek-OCR (3B)** so that one model reads **Hindi + English** documents — printed and handwritten — and returns **grounded bilingual blocks**. Each block has a box, a layout label, a reading order, the source text and an English translation. A separate, non-AI renderer turns those blocks into the translated PDF.
 
 **Deadline**
 
 | Milestone | Date | What it shows |
 |---|---|---|
-| **M1** | **2026-12-20** (1 month) | Hindi FIR reader |
-| **M2** | **2027-01-17** (2 months, hard limit) | Hindi FIR reader + translator, final report |
+| **M1** | **2026-12-20** (1 month) | Hindi document reader |
+| **M2** | **2027-01-17** (2 months, hard limit) | Hindi document reader + translator, final report |
 
 - Written 2026-11-18.
 - Status: plan approved, nothing trained yet.
-- Source discussion: [ChatGPT export](ChatGPT-Training%20OCR%20Models%20Properly-20261118-2144.md). This plan checks it against the real model code, the real tokenizer and your real data, and corrects it where it was wrong (section 4).
+- Source discussion: a ChatGPT planning chat (private, not in the repo). This plan checks it against the real model code, the real tokenizer and your real data, and corrects it where it was wrong (section 4).
 
 Detail lives in the stage docs. This page summarizes and links.
 
@@ -20,7 +20,7 @@ Detail lives in the stage docs. This page summarizes and links.
 | [tokenizer-check.md](tokenizer-check.md) | Can DeepSeek's tokenizer handle Hindi and English? (Yes, with rules) |
 | [stage-0-data-and-baseline.md](stages/stage-0-data-and-baseline.md) | Convert golden data, split it, measure the untrained model |
 | [stage-1-script-adaptation.md](stages/stage-1-script-adaptation.md) | Teach the model to read Devanagari, printed and handwritten |
-| [stage-2-document-understanding.md](stages/stage-2-document-understanding.md) | Teach whole FIR pages: boxes, labels, reading order, text |
+| [stage-2-document-understanding.md](stages/stage-2-document-understanding.md) | Teach whole pages: boxes, labels, reading order, text |
 | [stage-3-language-branch.md](stages/stage-3-language-branch.md) | Text-only Hindi + translation training of the decoder |
 | [stage-4-joint-ocr-translation.md](stages/stage-4-joint-ocr-translation.md) | Combine reading and translation into one model |
 | [stage-5-release.md](stages/stage-5-release.md) | Final test, compression, hand-off to the PDF renderer |
@@ -33,9 +33,8 @@ Detail lives in the stage docs. This page summarizes and links.
 |---|---|---|
 | Base model | **DeepSeek-OCR 2** (3B, Jan 2026, Apache-2.0), pinned revision `aaa02f38…`. Replaces the earlier v1-vs-OCR-2 baseline choice | You, 2026-11-19 |
 | Stage 1 structure | **1A printed → 1B handwritten (separate adapter) → 1C joint** with the golden regions; each starts from the previous merged checkpoint | You, 2026-11-19 |
-| Languages (V1) | **Hindi + English only.** English appears inside FIRs and is the translation target. **Marathi moves to V2** | You, 2026-11-18 |
+| Languages (V1) | **Hindi + English only.** English appears inside the documents and is the translation target. **Marathi moves to V2** | You, 2026-11-18 |
 | Time box | First results in 1 month (M1, 2026-12-20). Done in at most 2 months (M2, 2027-01-17) | You, 2026-11-18 |
-| Domain | Police FIRs and complaint letters (Bihar, Hindi) | Data scan |
 | Golden data | ~3K pages, **fully human-checked**, used as ground truth. Marathi pages are set aside for V2 | You |
 | Licence use | **Research / internal only**, so academic-licence datasets are allowed | You |
 | V1 output | Grounded bilingual blocks. **No key-value field extraction in V1** | You |
@@ -68,10 +67,7 @@ Detail lives in the stage docs. This page summarizes and links.
 
 A sample of 4 documents, 13 pages and 134 regions was scanned in `dataEngine/data/`.
 
-**Content:**
-- handwritten Hindi complaint letters
-- printed FIR forms filled in by hand
-- pages from Bihar police stations (Arariya, Aurangabad, Begusarai), rendered at 200–300 DPI
+**Content:** handwritten Hindi pages and printed pages filled in by hand, rendered at 200–300 DPI.
 
 **Fields per region:**
 - box in pixels
@@ -124,7 +120,7 @@ decoder "DeepseekV2": 12 layers, hidden 1280, 10 heads, plain multi-head attenti
 
 ### 3.3 Tokenizer
 
-DeepSeek's tokenizer handles Hindi **losslessly**: it reproduced all 17,355 characters of your real FIR text exactly. It is costly, though:
+DeepSeek's tokenizer handles Hindi **losslessly**: it reproduced all 17,355 characters of your real golden text exactly. It is costly, though:
 
 | Language | Tokens per word |
 |---|---|
@@ -164,7 +160,7 @@ Full numbers, including Marathi for V2, are in [tokenizer-check.md](tokenizer-ch
 
 | # | ChatGPT said | Reality / change | Why |
 |---|---|---|---|
-| 1 | Printed government text first, handwriting optional | **Handwriting is core.** Handwritten Hindi datasets are essential in Stage 1 | Your FIRs are handwritten |
+| 1 | Printed text first, handwriting optional | **Handwriting is core.** Handwritten Hindi datasets are essential in Stage 1 | Your documents are mostly handwritten |
 | 2 | Hindi + Marathi together, 90-day+ roadmap | **Hindi only, 8 weeks, results at week 4** | Your decision, 2026-11-18 |
 | 3 | No official training pipeline; write a custom loop | The model's own `forward(labels=…)` computes the loss, so **HF Trainer + PEFT** works with a small data collator. Unsloth also supports it (fallback) | Model code, Unsloth docs |
 | 4 | Train the "2-layer conv compressor" | The bridge is **`projector`** (one Linear layer), and the official code runs it without gradients, so it stays frozen in V1. The 16× conv compressor (`net_2`, `net_3`) sits inside `sam_model`, also frozen | Model code |
@@ -173,7 +169,7 @@ Full numbers, including Marathi for V2, are in [tokenizer-check.md](tokenizer-ch
 | 7 | Weighted multi-task loss (λ = 0.40/0.25/…) | One next-token loss. **Task balance comes from sampling shares** | Every task is next-token prediction, so loss weights add tuning work without adding control |
 | 8 | (not covered) | Vision and text tokens share 8,192 positions. Measured: your pages need 1,420 output tokens on average and at most 2,145 in bilingual form | Tokenizer test on golden data |
 | 9 | DeepSeek-OCR v1 | **Switched to DeepSeek-OCR 2** (Jan 2026): same decoder and tokenizer, Qwen2-based DeepEncoder V2, better reading order on its benchmark | You, 2026-11-19 |
-| 10 | Split by document | **Split by police station**, falling back to by document | One officer writes many FIRs. A page-level split leaks their handwriting into test |
+| 10 | Split by document | **Split by writer group**, falling back to by document | The same few people write many documents. A page-level split leaks their handwriting into test |
 | 11 | Feed detected boxes as hints 50% of the time, 20% of them corrupted | **Deferred.** The V1 model detects layout itself | Simpler: one model does the job |
 | 12 | Separate translation branch via adapter routing, merge, or full transfer | **Merge with strength λ, gated against a simpler control** (Stage 4). Keeping the branch as a separate frozen adapter equals a merge at λ=1 | Same result, less machinery |
 | 13 | Large synthetic rendering programme | **Deferred to V2.** Public printed Hindi (Mozhi) + your pages cover V1 | Saves engineering time inside the time box |
@@ -190,7 +186,7 @@ Stage 0  data + baseline (no training)
    ├──► Stage 1  read Devanagari (crops): 1A printed → 1B handwritten → 1C joint
    │        │
    │        ▼
-   │    Stage 2  understand FIR pages ──────────┐      ◄── M1 result (week 4)
+   │    Stage 2  understand whole pages ────────┐      ◄── M1 result (week 4)
    │                                            ▼
    └──► Stage 3  language branch (text only) ─► Stage 4  join reading + translation ─► Stage 5 ◄── M2 (week 8)
 ```
@@ -254,21 +250,18 @@ There is one training entry point, with one config per stage.
 
 **Output:** one block per region, in reading order. Reading order is the order of the blocks, so no separate number is needed.
 
-Real blocks from `Arariya_SC_ST_PS_07_18/page_0001`, text shortened and personal details replaced by placeholders:
+An invented example in the same format:
 
 ```
 <|ref|>section-title<|/ref|><|det|>[[153, 85, 770, 157]]<|/det|>
-विषय :- मारपीट गाली गलौज घड़ी साइकिल एवं रूपया
-छीन लेने के सम्बंध में।
+विषय :- अवकाश हेतु प्रार्थना पत्र।
 [EN]
-Subject :- Regarding assault, verbal abuse, snatching of watch, bicycle and money.
+Subject :- Application for leave.
 
 <|ref|>paragraph<|/ref|><|det|>[[133, 178, 822, 940]]<|/det|>
-निवेदन पूर्वक कहना है कि मैं [नाम]
-उम्र - [आयु] वर्ष पिता [नाम] ग्राम- [ग्राम] ...
+निवेदन है कि मैं [नाम] ...
 [EN]
-It is humbly stated that I, [Name],
-age - [age] years, father [Name], resident ...
+I, [Name], request ...
 ```
 
 - **Boxes:** pixels scaled to 0–999 with `round(x / width * 999)`.
@@ -307,7 +300,7 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 
 | Dataset | Content | Kind | Size (approx.) | Licence | Stage | Pri | Link |
 |---|---|---|---|---|---|---|---|
-| **Golden FIR pages** (yours) | Pages with boxes, labels, text, English | handwritten + printed forms | ~3K pages, ~10 regions/page | private | 0–5 | P1 | `dataEngine/data/` |
+| **Golden pages** (yours) | Pages with boxes, labels, text, English | handwritten + printed forms | ~3K pages, ~10 regions/page | private | 0–5 | P1 | `dataEngine/data/` |
 | IIIT-HW-Dev (= Hindi part of IIIT-INDIC-HW-WORDS; a third-party copy has exactly these split sizes, so it is one dataset, not two) | Handwritten Hindi words | handwritten | ~95K words (69,853 / 12,708 / 12,869) | CC BY 4.0 (ilocr) | 1B, 1C | P1 | [ilocr (official), dataset 18](https://ilocr.iiit.ac.in/dataset/18/) |
 | DohaScript | Continuous handwritten Hindi, 531 writers, one page each | handwritten | 531 pages. The HF repo has 200 page images and **no transcriptions** (checked 2026-11-26); full set on request from the authors | "other" on HF, check | 1B, 1C | P1 | "other" on HF, check | 1B, 1C | P1 | [arXiv 2602.18089](https://arxiv.org/abs/2602.18089), [authors' HF](https://huggingface.co/datasets/SIR-Lab/DohaScript) |
 | IAM Handwriting (lines) | Handwritten English lines, ~650 writers | handwritten | ~13K lines | research licence, registration | 1B, 1C | P1 | [FKI group (official)](https://fki.tic.heia-fr.ch/databases/iam-handwriting-database) |
@@ -349,7 +342,7 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 | Metric | Stage 1 | Stage 2 | Final V1 |
 |---|---|---|---|
 | Printed line CER | ≤3% | ≤3% | ≤3% |
-| Government page CER | measure baseline | ≤5% | ≤5% |
+| Golden page CER | measure baseline | ≤5% | ≤5% |
 | Layout mAP@50 | — | ≥0.85 | ≥0.85 |
 | Bounding-box IoU | — | ≥0.80 | ≥0.80 |
 | Extraction field F1 | — | ≥0.85 | ≥0.90 |
@@ -362,6 +355,8 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 | Metric | Computation |
 |---|---|
 | Crop CER / WER | Corpus-level edits ÷ reference length, raw and NFC. Characters are code points, so matras and nukta count. Reported per source, script, language and script × language. "Printed line CER" uses printed crops: the current Mozhi test set has words only |
+| AER / matra error rate / 1 - NED | Aksharas (consonant cluster + its matras and marks) as edit units; edits touching a dependent sign ÷ reference signs; mean per-item 1 - edits ÷ max length (`evaluation/metrics.py`) |
+| Latency | Mean seconds per item, batch 1, on the eval GPU |
 | Page CER | Ground-truth block text in reading order vs the predicted blocks' text in output order. Whitespace collapsed; HTML tags removed from the prediction (the base model writes tables as HTML). Output without parsable blocks is scored as plain text |
 | Layout AP@50 / mAP@50 | VOC all-point AP at IoU 0.5 per page, averaged. The model gives no confidence scores, so predictions are ranked by output order. Class-agnostic AP, and class-aware mAP over each page's ground-truth labels. The base model uses its own label names, so its class-aware score is near 0 until Stage 2 teaches the IndicDLP labels |
 | Bounding-box IoU | One-to-one greedy matching at any overlap; mean over ground-truth blocks, unmatched = 0. Boxes are 0–999 on both sides, and IoU is unchanged by per-axis scaling |
@@ -376,7 +371,7 @@ The first two prompts are DeepSeek-OCR's own, so we build on what it already kno
 - Evaluate with `configs/eval/test_data.toml --split test --checkpoint start`.
 - The sample:
   - 200 Mozhi printed words
-  - 200 golden FIR regions
+  - 200 golden regions
   - all 49 golden pages (538 blocks)
 - `test_data/cvit` is a byte-identical copy of `test_data/mozhi`, so it is used once.
 
@@ -432,7 +427,7 @@ Buffer                                                ████   (follow-up 
 | W1 | 11-23 → 11-29 | Stage 0: convert, split, smoke tests, OCR-2 baseline (`evaluation --checkpoint start`), measure speed | splits locked, gates set |
 | W2 | 11-30 → 12-06 | Stage 1A, then 1B. Stage 3 starts on MI300X | 1A and 1B gates |
 | W3 | 12-07 → 12-13 | Stage 1C, then start Stage 2 | 1C gate |
-| W4 | 12-14 → 12-20 | Finish Stage 2. **M1 report** on test: Hindi FIR reading + layout vs the original OCR-2. Stage 3 gate | **M1: Hindi FIR reader** |
+| W4 | 12-14 → 12-20 | Finish Stage 2. **M1 report** on test: Hindi reading + layout vs the original OCR-2. Stage 3 gate | **M1: Hindi document reader** |
 | W5–6 | 12-21 → 2027-01-03 | Stage 4: J0 vs J1, then the full joint run | Stage 4 gate |
 | W7 | 2027-01-04 → 01-10 | Stage 5: test set, quantization, latency, renderer contract | release check |
 | W8 | 2027-01-11 → 01-17 | Buffer: follow-up experiments or reruns. **M2 report** | **M2: hindidoc-v0.1** |
@@ -457,7 +452,7 @@ Buffer                                                ████   (follow-up 
   - An active-learning loop: the model reads unlabeled pages, people fix the low-confidence blocks, retrain.
 - **V2:**
   - Synthetic rendering.
-  - FIR key-value fields (needs a schema + labels).
+  - Key-value fields (needs a schema + labels).
   - Preference tuning (DPO/GRPO) with checkable rewards: CER, box IoU, number preservation.
   - SAM unfreeze.
   - Edge distillation.
@@ -473,11 +468,11 @@ Buffer                                                ████   (follow-up 
 | Custom model code vs library versions | Training won't start or gives a wrong loss | Pin the stack; Stage 0 smoke tests (load, freeze check, finite loss, gradients flow, save/reload) |
 | Slow MoE training | Hours exceed the estimates | Measure in Stage 0; Unsloth; smaller epochs |
 | LoRA alone cannot read handwriting | 1B gate fails | Follow-up experiments (encoder blocks, conv downsampler) in the W8 buffer |
-| Same writer in train and test | Scores look better than reality | Split by police station |
+| Same writer in train and test | Scores look better than reality | Split by writer group |
 | Forgetting English text | Mixed pages break | English regions in replay + retention gate |
 | Language branch damages OCR | Stage 4 regresses | J0 control + λ sweep + OCR gate |
 | The human check covered text but not boxes/labels | Noisy layout supervision (86 of 134 sample regions had low-confidence labels) | Stage 0 confirms what was checked and spot-checks labels |
-| Model memorizes names from FIRs | Privacy leak | Data and checkpoints stay private; memorization probe in Stage 5 |
+| Model memorizes names from the golden data | Privacy leak | Data and checkpoints stay private; memorization probe in Stage 5 |
 | ROCm problems on MI300X | Stage 3 waits for the A6000 | Smoke test first. Run Stage 3 on the A6000 in W4 (mostly free during the M1 report). If that slips too, apply cut-list item 4 |
 | Holidays (W5–6) | Less hands-on time | Stage 4 runs are long, unattended jobs |
 
@@ -485,7 +480,7 @@ Buffer                                                ████   (follow-up 
 
 | Item | Needed by | Recorded in |
 |---|---|---|
-| Hindi page count; number of police stations / documents | Stage 0 (split) | Decisions table |
+| Hindi page count; number of writer groups / documents | Stage 0 (split) | Decisions table |
 | What the human check covered (text only, or boxes + labels too) | Stage 0 | Decisions table |
 | Image mode for 1A/1B: 768 vs 1024 view | Stage 0 baseline | Decisions table |
 | Final gate values | Stage 0 baseline | Decisions table |

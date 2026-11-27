@@ -25,8 +25,8 @@ The OCR decoder learned to *copy* text from images. It was not built to translat
 |---|---|---|---|
 | 35% | Hindi language modelling | Sangraha Hindi (verified portion), chunks of up to 2,048 tokens | P1 |
 | 40% | Translation: ~90% hi→en, ~10% en→hi | BPCC hi–en. Human-made pairs (BPCC-H) first, then filtered mined pairs | P1 |
-| 15% | FIR translation pairs | Golden **train split** regions where the source is Hindi: `source` → `english` | P1 |
-| 5% | FIR terms | Short pairs mined from the golden train pairs: legal terms ("धारा", "भा. द. वि." → "I.P.C."), police ranks, form labels | P1 |
+| 15% | Golden translation pairs | Golden **train split** regions where the source is Hindi: `source` → `english` | P1 |
+| 5% | Domain terms | Short pairs mined from the golden train pairs: recurring terms, abbreviations and labels | P1 |
 | 5% | English language modelling | English side of BPCC as plain text (keeps English fluent) | P1 |
 
 **Filters for BPCC mined pairs:**

@@ -8,7 +8,7 @@ read it at start; a variable already set in the shell wins.
 Training logs through the HF Trainer integrations: loss, learning rate, dev loss, and each saved
 checkpoint when WANDB_LOG_MODEL=checkpoint / HF_MLFLOW_LOG_ARTIFACTS=TRUE. Evaluation logs one
 run per checkpoint (`log_eval`): scores, gate results and report_<split>.json. Predictions and
-the markdown report are never sent: they quote FIR text. Runs of one config share a W&B group
+the markdown report are never sent: they quote private text. Runs of one config share a W&B group
 and MLflow tags (`config`, `stage`, `kind` = train / eval).
 """
 

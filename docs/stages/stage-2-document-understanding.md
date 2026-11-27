@@ -1,12 +1,12 @@
-# Stage 2 — FIR document understanding
+# Stage 2 — Document understanding
 
-Teach the model to read **whole FIR pages**. That means:
+Teach the model to read **whole pages**. That means:
 - finding every block
 - giving each block its IndicDLP label and box
 - putting the blocks in reading order
 - writing each block's text
 
-The result is the **M1 checkpoint**: a Hindi FIR reader.
+The result is the **M1 checkpoint**: a Hindi document reader.
 
 | | |
 |---|---|
@@ -54,17 +54,16 @@ The output format is defined once in [training-plan.md §7](../training-plan.md#
 | Page free OCR | `<image>\nFree OCR.` | page text in reading order |
 | Replay | as in Stage 1 | as in Stage 1 |
 
-**Example page-parse target** (from `Arariya_SC_ST_PS_07_18/page_0001`, shortened):
+**Example page-parse target** (invented):
 
 ```
 <|ref|>header<|/ref|><|det|>[[190, 19, 558, 94]]<|/det|>
 सेवा में,
-थाना अध्यक्ष,
-अररिया।
+प्रधानाचार्य महोदय,
+[संस्था]।
 
 <|ref|>section-title<|/ref|><|det|>[[153, 85, 770, 157]]<|/det|>
-विषय :- मारपीट गाली गलौज घड़ी साइकिल एवं रूपया
-छीन लेने के सम्बंध में।
+विषय :- अवकाश हेतु प्रार्थना पत्र।
 ```
 
 **Page images:** OCR-2 tile mode (`crop_mode = true`: 1024 global view + 2–6 tiles of 768).

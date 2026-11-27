@@ -10,9 +10,9 @@ ruff check . && ruff format --check . && pytest   # what must pass before a comm
 
 | File | Covers |
 |---|---|
-| `conftest.py` | `GOLDEN` (test golden data), station `OVERRIDES` from `configs/data/test_data.toml`, `repo_tmp` fixture (temp folder inside the repo; the sandbox blocks the system temp) |
-| `test_golden.py` | golden page conversion, validation, station parsing |
-| `test_splits.py` | station-level split, locking |
+| `conftest.py` | `GOLDEN` (test golden data), id `OVERRIDES` from the git-ignored `overrides_file` of `configs/data/test_data.toml`, `repo_tmp` fixture (temp folder inside the repo; the sandbox blocks the system temp) |
+| `test_golden.py` | golden page conversion, validation, document-id parsing |
+| `test_splits.py` | writer-group split, locking |
 | `test_sources.py` | converters (`golden_regions`, `labelled_folder`) |
 | `test_text.py` | NFC, UTF-8 checks |
 | `test_document_ir.py` | grounded block serialize / parse |

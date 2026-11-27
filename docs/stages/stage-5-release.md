@@ -26,13 +26,13 @@ Run all four systems on the test split with the same prompts and settings:
 Report every metric from [training-plan.md §9](../training-plan.md#9-evaluation-and-gates), split by:
 - script type: printed / handwritten
 - text language: Hindi / English
-- `doc_type`: letter / form
+- `doc_type`
 
-Add 95% confidence intervals by bootstrapping over **police stations**, not pages, because pages from one station are not independent.
+Add 95% confidence intervals by bootstrapping over **writer groups**, not pages, because pages from one group are not independent.
 
 ### 5.2 Error analysis
 
-- Break down CER and block F1 by layout label, police station and `doc_type`.
+- Break down CER and block F1 by layout label, writer group and `doc_type`.
 - List the 20 most frequent character confusions (e.g. matra or nukta swaps).
 
 These numbers drive the V1.1 / V2 priorities.
@@ -91,7 +91,7 @@ Hand the renderer 20 test-page JSONs, chosen by a fixed rule, plus this table.
 4. **Research answer:** did the language branch (J1) beat J0? By how much, and at what OCR cost?
 5. **Limits:**
    - Hindi + English only
-   - Bihar FIR style
+   - the golden data's document style
    - single pages
    - no key-value fields
    - research licence data
@@ -129,7 +129,7 @@ Save the following together:
 ## 4. Code this stage needs
 
 - **`evaluation`:**
-  - report runner (all systems, confidence intervals by station)
+  - report runner (all systems, confidence intervals by writer group)
   - memorization probe
   - quantized-load benchmark
 - **`dataEngine`:** the existing Document IR parser. Add JSON export only, no second parser.

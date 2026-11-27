@@ -6,7 +6,7 @@ Teach DeepSeek-OCR 2 to **read Hindi characters**, printed and handwritten, and 
 |---|---|---|---|---|
 | **1A — printed** | original DeepSeek-OCR 2 | Mozhi printed Hindi | one 768 view | `stage1a_printed/merged` |
 | **1B — handwritten** | best 1A, merged | IIIT-HW-Dev, DohaScript (Hindi), IAM (English) | one 768 view | `stage1b_handwritten/merged` |
-| **1C — joint** | best 1B, merged | your golden FIR regions + balanced printed/handwritten replay | 1024 global + 768 tiles | `stage1c_joint/merged` |
+| **1C — joint** | best 1B, merged | your golden regions + balanced printed/handwritten replay | 1024 global + 768 tiles | `stage1c_joint/merged` |
 
 - Weeks: W2–W3 (2026-11-30 → 12-13).
 - Configs: `configs/stage1/1a_printed.toml`, `stage1b_handwritten.toml`, `stage1c_joint.toml`.
@@ -68,10 +68,10 @@ Each sub-stage loads the previous merged checkpoint and adds a **fresh** adapter
   - IAM from the FKI group (fki.tic.heia-fr.ch; free for non-commercial research, registration).
 
   Never use third-party re-uploads. Record URL, licence and SHA-256 at download.
-- **Golden FIR regions enter only in 1C.** 1A and 1B use public data only, so the FIR data is untouched until the joint stage.
+- **Golden regions enter only in 1C.** 1A and 1B use public data only, so the private data is untouched until the joint stage.
 - **English:**
   - Handwritten English: IAM in 1B.
-  - Printed English: no trusted word/line dataset exists, so 1A is printed Hindi only. English printed text appears in your FIR regions in 1C, and the base model already reads printed English well.
+  - Printed English: no trusted word/line dataset exists, so 1A is printed Hindi only. English printed text appears in your golden regions in 1C, and the base model already reads printed English well.
 - Only train splits. Dev and test never enter training. Text is NFC-normalized.
 
 **Per sub-stage** (shares = sampling probabilities):
@@ -82,7 +82,7 @@ Each sub-stage loads the previous merged checkpoint and adds a **fresh** adapter
 | `iiit_hw_dev` (handwritten Hindi words) | — | 50% | 15% |
 | `dohascript` (handwritten Hindi lines) | — | 25% | 10% |
 | `iam_lines` (handwritten English lines) | — | 25% | 5% |
-| `golden_regions` (your FIR regions, ~21K train) | — | — | 40% |
+| `golden_regions` (your golden regions, ~21K train) | — | — | 40% |
 | Epoch size × epochs | 100K × 2 | 150K × 2 | 100K × 2 |
 | Epoch-1 curriculum | words → words + lines | words → words + lines | none (mixed) |
 

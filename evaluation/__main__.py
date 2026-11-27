@@ -13,7 +13,7 @@ its own [image] mode. Crop tasks read a crop-record folder; page tasks read page
 the split files and the image root. Items are a fixed, seeded sample, sharded across ranks.
 Per checkpoint: predictions.jsonl + scores.json (reused while nothing changed).
 Rank 0 writes [eval].report_dir/report_<split>.md and .json, with gates. Predictions (raw
-FIR text) stay under [eval].output_dir; the report holds scores only, plus examples when
+private text) stay under [eval].output_dir; the report holds scores only, plus examples when
 comparing checkpoints. With W&B / MLflow keys in .env, each checkpoint's scores and gates
 (not predictions or examples) are also logged as one tracker run (tracking/__init__.py).
 """
@@ -140,6 +140,7 @@ def run_checkpoint(checkpoint: str, items: list[dict], raw: dict, split: str, st
             if done % 10 == 0:
                 elapsed = time.perf_counter() - started
                 log.info("%s: %d/%d items, %.0fs", label(checkpoint), done, len(shard), elapsed)
+            item_start = time.perf_counter()
             text, finished = generate_text(
                 model,
                 tokenizer,
@@ -149,7 +150,10 @@ def run_checkpoint(checkpoint: str, items: list[dict], raw: dict, split: str, st
                 item["max_new_tokens"],
                 no_repeat,
             )
-            predictions.append({**item, "prediction": text, "finished": finished})
+            seconds = time.perf_counter() - item_start
+            predictions.append(
+                {**item, "prediction": text, "finished": finished, "seconds": seconds}
+            )
     predictions = gather_object(predictions)
     del model
     if torch.cuda.is_available():

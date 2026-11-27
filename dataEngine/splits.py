@@ -1,8 +1,8 @@
-"""Train/dev/test split by police station, written once and then locked.
+"""Train/dev/test split by writer group (`PageRecord.group_key`), written once and then locked.
 
-One officer writes many FIRs at one station, so splitting by page would leak that
-officer's handwriting into test. A station larger than `max_group_fraction` of all
-pages is split by document instead, so the targets stay reachable.
+The same few people write many documents in one group, so splitting by page would leak
+their handwriting into test. A group larger than `max_group_fraction` of all pages is
+split by document instead, so the targets stay reachable.
 """
 
 import hashlib
@@ -24,22 +24,22 @@ def assign_splits(
     """Map page_id → split. Each group goes whole to one split; fill order: test, dev, train."""
     # shortcut: no doc_type stratification yet; add it once the Stage 0 page tags exist.
     total = len(pages)
-    by_station: dict[str, list[PageRecord]] = defaultdict(list)
+    by_group: dict[str, list[PageRecord]] = defaultdict(list)
     for page in pages:
-        by_station[page.station_key].append(page)
+        by_group[page.group_key].append(page)
 
     groups: dict[str, list[str]] = {}
     split_by_document = []
-    for station, station_pages in sorted(by_station.items()):
-        if len(station_pages) > max_group_fraction * total:
-            split_by_document.append(station)
+    for group, group_pages in sorted(by_group.items()):
+        if len(group_pages) > max_group_fraction * total:
+            split_by_document.append(group)
             by_document: dict[str, list[str]] = defaultdict(list)
-            for page in station_pages:
+            for page in group_pages:
                 by_document[page.document_id].append(page.page_id)
             for document_id, page_ids in by_document.items():
-                groups[f"{station}#{document_id}"] = page_ids
+                groups[f"{group}#{document_id}"] = page_ids
         else:
-            groups[station] = [p.page_id for p in station_pages]
+            groups[group] = [p.page_id for p in group_pages]
 
     order = sorted(groups)
     random.Random(seed).shuffle(order)
@@ -54,11 +54,11 @@ def assign_splits(
 
     info = {
         "seed": seed,
-        "group": "police_station",
+        "group": "region/unit",
         "test_fraction": test_fraction,
         "dev_fraction": dev_fraction,
         "max_group_fraction": max_group_fraction,
-        "stations_split_by_document": split_by_document,
+        "groups_split_by_document": split_by_document,
         "groups": len(groups),
         "pages": {s: counts[s] for s in SPLITS},
     }

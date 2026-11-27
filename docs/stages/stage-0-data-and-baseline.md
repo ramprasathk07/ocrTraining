@@ -20,7 +20,7 @@ Part of the [training plan](../training-plan.md).
 Count the following, across all ~3K pages:
 - documents, pages and regions
 - per language
-- per police station
+- per writer group (`region/unit`, parsed from `document_id`)
 - per `status`
 - per `layout_label`
 
@@ -35,10 +35,10 @@ Write one JSON line per page with the fields below. Nothing else goes in: model 
 
 | Field | From | Notes |
 |---|---|---|
-| `page_id` | `page.json` | e.g. `Arariya_SC_ST_PS_07_18/page_0001` |
+| `page_id` | `page.json` | e.g. `<document_id>/page_0001` |
 | `document_id` | `page.json` | |
-| `police_station` | parsed from `document_id` | Pattern `<District>_<Station>_PS_<case>_<yy>`. **Check the pattern on all IDs**; ask before guessing for any that do not match |
-| `doc_type` | page-level human tag | `handwritten_letter` / `filled_form` / `other` (used for split stratification) |
+| `region`, `unit` | parsed from `document_id` | Pattern `<Region>_<Unit>_<XX>_<number>_<yy>`. **Check the pattern on all IDs**; ask before guessing for any that do not match |
+| `doc_type` | page-level human tag | e.g. handwritten / printed / mixed (used for split stratification) |
 | `image` | `png/page.png` | Path **relative** to the data root. The stored paths are absolute Linux paths and must be rebased |
 | `width`, `height` | `page.json` | pixels |
 | `blocks[]` | `source_language_extraction/page.json` + `eng_translation/page.json`, joined on `region_id` | sorted by `reading_order` |
@@ -86,10 +86,10 @@ Training does not need region tags. Only the per-script metrics do.
 
 ### 0.5 Split (then lock)
 
-1. **Group = police station.** Assign whole stations to test / dev / train, aiming for 15 / 15 / 70% of pages and stratifying by `doc_type`.
-2. If one station holds more than 15% of the pages, split it by `document_id` instead and note this in the manifest.
+1. **Group = writer group (`region/unit`).** Assign whole groups to test / dev / train, aiming for 15 / 15 / 70% of pages and stratifying by `doc_type`.
+2. If one group holds more than 15% of the pages, split it by `document_id` instead and note this in the manifest.
 3. English-only pages follow their document.
-4. The split is deterministic: sort the stations, use a fixed seed, and record the seed in the manifest.
+4. The split is deterministic: sort the groups, use a fixed seed, and record the seed in the manifest.
 5. Write `splits/{train,dev,test}.txt` (page ids), plus the SHA-256 of each list.
 
 **From here on, the test list is read only by the M1/M2 report runs.**
@@ -121,7 +121,7 @@ On the A6000:
 
 | Run | Data | Prompt | Measures |
 |---|---|---|---|
-| B0 | `dataEngine/data/test_data`: 200 printed words, 200 FIR regions, 49 FIR pages | Free OCR (crops), grounding page parse (pages) | `python -m evaluation --config configs/eval/test_data.toml --split test --checkpoint start`: printed CER, region CER, page CER, layout AP/mAP@50, box IoU, block F1, reading order, valid output ([plan §9](../training-plan.md#9-evaluation-and-gates)) |
+| B0 | `dataEngine/data/test_data`: 200 printed words, 200 golden regions, 49 golden pages | Free OCR (crops), grounding page parse (pages) | `python -m evaluation --config configs/eval/test_data.toml --split test --checkpoint start`: printed CER, region CER, page CER, layout AP/mAP@50, box IoU, block F1, reading order, valid output ([plan §9](../training-plan.md#9-evaluation-and-gates)) |
 | B1 | dev crops of every converted Stage 1 source | `<image>\nFree OCR.` | `python -m evaluation --config configs/stage1/1a_printed.toml --checkpoint start`: CER/WER per source, script, language. Run once with `image_size = 768` and once with `1024` |
 | B2 | dev pages, tile mode (OCR-2 default) | `<image>\n<|grounding|>Convert the document to markdown.` | page CER, block F1@0.5 (**class-agnostic**: the base model uses its own labels), Kendall τ, parse rate, seconds/page |
 | B3 | Mozhi Hindi test lines | Free OCR | CER |
@@ -141,7 +141,7 @@ Turn the proposed gates in [training-plan.md §9](../training-plan.md#9-evaluati
 
 - [ ] Inventory shown to the user. Marathi pages set aside.
 - [ ] All validation checks pass, or every failure is listed and accepted by the user.
-- [ ] Splits written, hashed and locked. No police station appears in two splits.
+- [ ] Splits written, hashed and locked. No writer group appears in two splits.
 - [ ] Smoke tests S1–S9 green (S10 decides where Stage 3 runs).
 - [ ] OCR-2 baseline report written (`report/stage1a_printed/report_dev.md`). Image mode and gate values recorded in Decisions.
 
@@ -149,7 +149,7 @@ Turn the proposed gates in [training-plan.md §9](../training-plan.md#9-evaluati
 
 | Risk | Fallback |
 |---|---|
-| `document_id` does not encode the police station for some files | Ask the user for a mapping. Do not guess |
+| `document_id` does not encode the writer group for some files | Ask the user for a mapping. Do not guess |
 | OCR-2 custom code fails under the pinned stack | Check `transformers==4.46.3` and the pinned revision first. v1 input encoding is in git history (commit 5172b2d) as a last resort |
 | HF Trainer + PEFT is too slow | Try Unsloth's upload (decoder LoRA only) on the same data |
 | Measured speed is far below the estimates | Shrink the Stage 1 epoch size first (it is the largest), then follow the cut list |

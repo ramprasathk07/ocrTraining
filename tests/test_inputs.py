@@ -57,7 +57,7 @@ def test_generation_prompt_has_no_target():
 
 
 def test_tiled_full_page():
-    encoded = encode_image(Image.new("RGB", (1698, 2325)), TILED)  # a golden FIR page size
+    encoded = encode_image(Image.new("RGB", (1698, 2325)), TILED)  # a golden page size
     assert encoded.tiles == (2, 3)  # closest grid with 2..6 tiles
     assert encoded.patches.shape == (6, 3, 768, 768)
     assert encoded.num_tokens == 16 * 16 + 1 + (12 * 2) * (12 * 3)

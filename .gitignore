@@ -1,14 +1,17 @@
 # Generated data, checkpoints, predictions
 outputs/
 
-# Evaluation reports: before/after comparisons quote FIR text examples.
-# report/prompts/ (prompt versions, history, leaderboard: no FIR text) is tracked.
+# Evaluation reports: before/after comparisons quote private document text.
+# report/prompts/ (prompt versions, history, leaderboard: no document text) is tracked.
 report/*
 !report/prompts/
 !report/README.md
 
-# Golden FIR data contains personal information (names, addresses, caste). Never commit it.
+# Golden data is private and contains personal information. Never commit it.
 dataEngine/data/
+
+# Private planning notes (chat exports)
+docs/ChatGPT-*.md
 
 # Python
 __pycache__/

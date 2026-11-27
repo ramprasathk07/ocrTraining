@@ -1,29 +1,31 @@
 import pytest
 from conftest import GOLDEN, OVERRIDES, needs_golden
 
-from dataEngine.golden import convert_document, parse_station, to_999
+from dataEngine.golden import convert_document, parse_group, to_999
 
 
 @pytest.mark.parametrize(
     ("document_id", "expected"),
     [
-        ("Arariya_SC_ST_PS_07_18", ("Arariya", "SC_ST")),
-        ("Arariya_Fulkaha_PS_14_21", ("Arariya", "Fulkaha")),
-        ("Aurangabad_Aurangabad_cyber_PS_86_24", ("Aurangabad", "Aurangabad_cyber")),
-        ("Begusarai_Bachhwara_PS_75_20", ("Begusarai", "Bachhwara")),
+        ("Alpha_Beta_XY_07_18", ("Alpha", "Beta")),
+        ("Alpha_Two_Words_XY_14_21", ("Alpha", "Two_Words")),
+        ("Gamma_Gamma_east_XY_86_24", ("Gamma", "Gamma_east")),
     ],
 )
-def test_parse_station(document_id, expected):
-    assert parse_station(document_id, {}) == expected
+def test_parse_group(document_id, expected):
+    assert parse_group(document_id, {}) == expected
 
 
-def test_parse_station_refuses_to_guess():
-    with pytest.raises(ValueError, match="station_overrides"):
-        parse_station("scan_0001", {})
+def test_parse_group_refuses_to_guess():
+    with pytest.raises(ValueError, match="overrides_file"):
+        parse_group("scan_0001", {})
 
 
-def test_station_override_wins():
-    assert parse_station("Darbhanga_BadhGao_13_26", OVERRIDES) == ("Darbhanga", "BadhGao")
+def test_override_wins():
+    assert parse_group("Delta_Epsilon_13_26", {"Delta_Epsilon_13_26": ["Delta", "Epsilon"]}) == (
+        "Delta",
+        "Epsilon",
+    )
 
 
 def test_to_999():
@@ -33,20 +35,14 @@ def test_to_999():
 
 
 @needs_golden
-def test_sample_document_converts_and_validates():
-    pages, problems = convert_document(GOLDEN / "Arariya_SC_ST_PS_07_18", GOLDEN, OVERRIDES)
-    assert problems == []
-    assert [p.page_id for p in pages] == [
-        "Arariya_SC_ST_PS_07_18/page_0001",
-        "Arariya_SC_ST_PS_07_18/page_0002",
-    ]
-    first = pages[0]
-    assert first.image == "Arariya_SC_ST_PS_07_18/pages/page_0001/png/page.png"
-    title = next(b for b in first.blocks if b.region_id == "r002")
-    assert title.bbox_999 == (153, 85, 770, 157)
-    assert title.label == "section-title"
-    assert title.source.startswith("विषय")
-    assert title.english.startswith("Subject")
-    rotated = next(b for b in first.blocks if b.region_id == "r005")
-    assert rotated.rotation == 90
-    assert rotated.crop.endswith("regions/r005.ocr.png")
+def test_golden_documents_convert_and_validate():
+    documents = sorted(p for p in GOLDEN.iterdir() if (p / "manifest.json").is_file())
+    for document in documents[:3]:
+        pages, problems = convert_document(document, GOLDEN, OVERRIDES)
+        assert problems == []
+        assert pages and all(p.page_id.startswith(f"{document.name}/page_") for p in pages)
+        for page in pages:
+            assert page.image.endswith("/png/page.png")
+            for block in page.blocks:
+                assert all(0 <= v <= 999 for v in block.bbox_999)
+                assert block.crop.startswith(f"{document.name}/") and block.crop.endswith(".png")

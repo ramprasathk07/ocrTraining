@@ -9,5 +9,5 @@ def test_nfc_makes_both_nukta_forms_identical():
 
 
 def test_lone_surrogate_is_not_valid_utf8():
-    assert is_valid_utf8("थाना अध्यक्ष")
-    assert not is_valid_utf8("थाना\udc8d")
+    assert is_valid_utf8("नमस्ते मेरा")
+    assert not is_valid_utf8("पत्र\udc8d")

@@ -17,18 +17,17 @@ Rules for every config:
 
 | File | Input | Output |
 |---|---|---|
-| `training_data.toml` | `dataEngine/data/` (golden FIRs) + official public downloads | `outputs/data/{golden,splits,crops/<source>}` |
+| `training_data.toml` | `dataEngine/data/` (golden pages) + official public downloads | `outputs/data/{golden,splits,crops/<source>}` |
 | `test_data.toml` | `dataEngine/data/test_data/` (49 golden pages + Mozhi test words) | `outputs/data/test/...` |
 
 | Section | Holds |
 |---|---|
 | `seed` | used for the split |
-| `[golden]` | `data_root`, `out_dir`, `exclude_langs` (pages set aside, e.g. Marathi), `drop_invalid` |
-| `[golden.station_overrides]` | document ids that don't follow `<District>_<Station>_PS_<case>_<yy>`, mapped to `[district, station]` |
-| `[split]` | `test_fraction`, `dev_fraction`, `max_group_fraction` (stations larger than this are split by document) |
+| `[golden]` | `data_root`, `out_dir`, `exclude_langs` (pages set aside, e.g. Marathi), `drop_invalid`, `overrides_file`: a git-ignored TOML mapping document ids that don't follow `<Region>_<Unit>_<XX>_<number>_<yy>` to `[region, unit]` |
+| `[split]` | `test_fraction`, `dev_fraction`, `max_group_fraction` (writer groups larger than this are split by document) |
 | `[[sources]]` | one block per dataset: `name`, `converter` (see `dataEngine/sources/`), `out_dir` + converter settings |
 
-The `test_data.toml` overrides are readings of the file names. `Rail_Patna_Rail_Patna_cyber_PS_09_23` is still unconfirmed.
+The overrides are readings of the file names; some are unconfirmed.
 
 ```bash
 python -m dataEngine --config configs/data/training_data.toml golden

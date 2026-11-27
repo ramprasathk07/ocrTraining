@@ -1,13 +1,50 @@
 # HindiDoc-OCR
 
-Fine-tune **DeepSeek-OCR 2 (3B)** to read **Hindi + English police documents (FIRs)**, printed and handwritten. For each page it returns **grounded bilingual blocks**: box, layout label, reading order, source text and English translation. A separate renderer rebuilds the translated PDF from them.
+Fine-tune **DeepSeek-OCR 2 (3B)** to read **Hindi + English documents**, printed and handwritten. For each page it returns **grounded bilingual blocks**: box, layout label, reading order, source text and English translation. A separate renderer rebuilds the translated PDF from them.
 
-> **Status (2026-11-19):** switched to DeepSeek-OCR 2. The data engine, Stage 1 (1A printed → 1B handwritten → 1C joint) training and the before/after evaluation pipeline are built and tested on CPU. Nothing has been trained yet; the untrained baseline is evaluated on the test data. Next steps: the training smoke tests (`--smoke`) on the GPU, and the official public-data downloads.
+> **Status (2026-11-27):** Stage 1A (printed Hindi) is training: 2 epochs × 80K Mozhi samples = 2,500 steps at global batch 64, LoRA on DeepEncoder V2 + decoder attention (3.05M trainable parameters), on one L4. Checkpoints are evaluated on an RTX 3060 as they arrive. Results below.
 
 | Milestone | Date | Deliverable |
 |---|---|---|
-| M1 | 2026-12-20 | Hindi FIR reader: reading + layout, compared with the untrained model |
+| M1 | 2026-12-20 | Hindi document reader: reading + layout, compared with the untrained model |
 | M2 | 2027-01-17 | Reader + translator in one model, final report |
+
+## Results so far: Stage 1A (printed Hindi)
+
+**Training** (logged to W&B every 10 steps; dev loss every 500 steps on 2,000 held-out Mozhi words):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/training-dark.png">
+  <img alt="Stage 1A training: loss falls from 6.4 to 0.22 by step 850, dev loss 0.44 at step 500; learning rate warms up to 1e-4 and decays on a cosine; gradient norm settles between 12 and 25" src="docs/assets/training.png">
+</picture>
+
+**Dev-set scores per checkpoint** (public data only: 200 Mozhi printed words and 200 IIIT-HW handwritten words from the official val splits; never trained on):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/eval-dark.png">
+  <img alt="Exact match on printed words rises from 0.5% (base) to 77.5% at step 700; AER falls from 2,384% to 18.3%; handwritten words stay near 0% exact match, as expected for a printed-only stage" src="docs/assets/eval.png">
+</picture>
+
+| Mozhi printed (dev, 200 words), % | base | step 400 | step 500 | step 700 |
+|---|---|---|---|---|
+| CER ↓ | 1442.2 | 29.5 | 22.5 | **16.8** |
+| AER ↓ | 2383.6 | 32.6 | 25.3 | **18.3** |
+| WER ↓ | 659.5 | 33.0 | 28.5 | **22.5** |
+| Matra error rate ↓ | 100.0 | 42.5 | 30.1 | **22.2** |
+| 1 - NED ↑ | 0.8 | 80.7 | 85.4 | **88.9** |
+| Exact match ↑ | 0.5 | 67.0 | 71.5 | **77.5** |
+
+| IIIT-HW handwritten (dev, 200 words), % | base | step 400 | step 500 | step 700 |
+|---|---|---|---|---|
+| CER ↓ | 388.8 | 86.6 | 85.8 | 83.1 |
+| AER ↓ | 714.7 | 96.7 | 94.7 | 91.9 |
+| 1 - NED ↑ | 0.1 | 18.2 | 21.0 | 24.7 |
+| Exact match ↑ | 0.0 | 0.5 | 1.5 | 1.5 |
+
+- The base model mostly hallucinates (long HTML tables for a single word), so its error rates are far above 100%. 1 - NED and exact match are bounded and easier to compare.
+- Handwriting barely moves: 1A trains on printed text only; handwriting is Stage 1B.
+- The 1A gate is printed CER ≤ 3% on the full dev suite (2,000 words per source); step 700 is not there yet.
+- Charts and tables: `python docs/assets/make_charts.py --run <entity>/<project>/<run id> --eval start=… --eval 700=…` (scores in `docs/assets/stage1a_dev_eval.json`). Latency per item appears from the next evaluation run on.
 
 ## How it works
 
@@ -17,7 +54,7 @@ Training runs in stages. Each stage adds a fresh LoRA adapter to the previous me
 |---|---|---|
 | 0 | Nothing (data, splits, baseline, smoke tests) | [stage-0](docs/stages/stage-0-data-and-baseline.md) |
 | 1 | Read Devanagari + handwritten English: 1A printed → 1B handwritten → 1C joint with golden regions | [stage-1](docs/stages/stage-1-script-adaptation.md) |
-| 2 | Whole FIR pages: boxes, labels, reading order, text | [stage-2](docs/stages/stage-2-document-understanding.md) |
+| 2 | Whole pages: boxes, labels, reading order, text | [stage-2](docs/stages/stage-2-document-understanding.md) |
 | 3 | Hindi + translation, text only (decoder branch) | [stage-3](docs/stages/stage-3-language-branch.md) |
 | 4 | Reading + translation in one model | [stage-4](docs/stages/stage-4-joint-ocr-translation.md) |
 | 5 | Final test, compression, renderer hand-off | [stage-5](docs/stages/stage-5-release.md) |
@@ -28,8 +65,8 @@ The full plan, with decisions, datasets, gates and timeline, is in [docs/trainin
 
 ```
 dataEngine/           raw data → validated records
-  golden.py             golden FIR pages → page records + validation
-  splits.py             train/dev/test by police station, locked once written
+  golden.py             golden pages → page records + validation
+  splits.py             train/dev/test by writer group, locked once written
   tasks.py              training types: task registry (prompt, record kind) + shared record reader
   document_ir.py        grounded block format: serialize / parse
   prompt_registry.py    prompt registry files (training and evaluation each keep one folder)
@@ -80,7 +117,7 @@ starts_from = "1A"   # [model].name_or_path is 1A's merged output; "base" = orig
 base  (original model)
     └─ 1A: printed Hindi crops (public data only)
         └─ 1B: handwritten Hindi + English crops, separate adapter on 1A
-            └─ 1C: joint printed + handwritten replay with golden FIR regions
+            └─ 1C: joint printed + handwritten replay with golden regions
 ```
 
 **How to add things:**
@@ -151,7 +188,7 @@ python -m training --config configs/stage1/1a_printed.toml --merge outputs/runs/
 |---|---|
 | Data | `outputs/data/` |
 | Training | `outputs/runs/<run>/`: checkpoints, TensorBoard logs, `run_manifest.json`, `smoke.json`, `adapter/`, `merged/` |
-| Evaluation | predictions per checkpoint in `<checkpoint>/eval/<split>/` (`start` and hub ids under `[eval].output_dir`), private; report in `report/<run>/report_<split>.md` + `.json` (git-ignored: comparisons quote FIR text) |
+| Evaluation | predictions per checkpoint in `<checkpoint>/eval/<split>/` (`start` and hub ids under `[eval].output_dir`), private; report in `report/<run>/report_<split>.md` + `.json` (git-ignored: comparisons quote private text) |
 
 ## Configuration
 
@@ -169,7 +206,7 @@ Every run is one TOML file in `configs/`: data engine (`configs/data/`), one tra
 ## Evaluation before and after training
 
 - The first `--checkpoint` is "before"; every later one is compared with it. `start` = the config's starting model; a folder or hub id also works.
-- Per source, script and language: CER, WER, exact match, change vs before, gates, most improved/regressed items. On pages: page CER, layout AP/mAP@50, box IoU, block F1, reading order, valid output.
+- Per source, script and language: CER, AER (akshara error rate), WER, matra/diacritic error rate, 1 - NED, exact match, mean latency, change vs before, gates, most improved/regressed items. On pages: page CER, layout AP/mAP@50, box IoU, block F1, reading order, valid output.
 - Predictions are cached per checkpoint while items, image mode, generation settings and weights are unchanged.
 
 **Before training, on the test data:** golden test pages in `dataEngine/data/test_data/src_golden`, plus the test splits of Mozhi and IIIT-HW. The Mozhi and IIIT-HW test splits come from `crops --source mozhi_hi / iiit_hw_dev`, Quickstart step 1.
@@ -192,7 +229,7 @@ Prompts are defined once, in `dataEngine/tasks.py`; a version is a hash of the e
 `cp .env.example .env` and fill in the keys. A tracker is on when its key (`WANDB_API_KEY`) or server (`MLFLOW_TRACKING_URI`) is set.
 - **Training:** loss, learning rate, dev loss, and each saved checkpoint, through the HF Trainer integrations.
 - **Evaluation:** one run per checkpoint, with scores, gates and `report_<split>.json`. `--checkpoint start` logs the untrained baseline too.
-- **Never sent:** predictions and markdown reports, because they quote FIR text.
+- **Never sent:** predictions and markdown reports, because they quote private text.
 
 Details: [tracking/README.md](tracking/README.md).
 
@@ -206,7 +243,7 @@ Details: [tracking/README.md](tracking/README.md).
 
 ## Data and privacy
 
-- **Golden FIR data never enters git.** `dataEngine/data/` and `outputs/` are git-ignored, because the documents contain names, addresses and caste information. Checkpoints trained on it stay private too.
+- **Golden data never enters git.** `dataEngine/data/` and `outputs/` are git-ignored, because the documents contain personal information. Checkpoints trained on it stay private too.
 - **Public data comes only from official publishers:** AI4Bharat, IIIT-Hyderabad CVIT / `ilocr.iiit.ac.in` (MeitY–Bhashini), or the dataset authors' own release. No third-party re-uploads. Record the URL, licence and SHA-256 of each archive at download.
 - Several datasets are licensed for research use only, and this project is **research / internal use**.
 

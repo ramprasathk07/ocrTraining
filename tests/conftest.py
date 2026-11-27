@@ -5,11 +5,12 @@ from pathlib import Path
 import pytest
 
 import tracking
+from dataEngine.__main__ import read_overrides
 
 GOLDEN = Path("dataEngine/data/test_data/src_golden")
-OVERRIDES = tomllib.loads(Path("configs/data/test_data.toml").read_text(encoding="utf-8"))[
-    "golden"
-]["station_overrides"]
+OVERRIDES = read_overrides(
+    tomllib.loads(Path("configs/data/test_data.toml").read_text(encoding="utf-8"))["golden"]
+)
 needs_golden = pytest.mark.skipif(not GOLDEN.is_dir(), reason="golden test data not present")
 
 

@@ -1,6 +1,6 @@
 # dataEngine/
 
-Turns raw data (golden FIRs, official public datasets) into validated **records**, and defines the **tasks** that turn a record into one training or evaluation sample. It has no model code and needs no GPU.
+Turns raw data (golden pages, official public datasets) into validated **records**, and defines the **tasks** that turn a record into one training or evaluation sample. It has no model code and needs no GPU.
 
 ```bash
 python -m dataEngine --config configs/data/training_data.toml golden                 # 1. golden pages → page records
@@ -15,8 +15,8 @@ Run the steps in that order. `--workers N` uses N CPU processes and gives the sa
 | File | Does |
 |---|---|
 | `__main__.py` | the CLI: `golden`, `split`, `crops` steps |
-| `golden.py` | reads one golden page folder → `PageRecord`; validation (boxes, labels, statuses, UTF-8); `parse_station` |
-| `splits.py` | splits by police station, so one officer's handwriting never appears in both train and test; writes once, refuses to overwrite |
+| `golden.py` | reads one golden page folder → `PageRecord`; validation (boxes, labels, statuses, UTF-8); `parse_group` |
+| `splits.py` | splits by writer group, so one writer's handwriting never appears in both train and test; writes once, refuses to overwrite |
 | `records.py` | `PageRecord`, `Block`, `CropRecord`; JSONL read/write; allowed `SPLITS`, `SCRIPTS`, `LEVELS` |
 | `tasks.py` | **training types**: `TASKS` registry (prompt, record kind, builder), `read_split` (shared by training and evaluation), `prompt_version` |
 | `document_ir.py` | the grounded block format `<\|ref\|>label<\|/ref\|><\|det\|>[[x1,y1,x2,y2]]<\|/det\|>text`, boxes 0–999: `serialize` / `parse` |
@@ -30,8 +30,8 @@ Run the steps in that order. `--workers N` uses N CPU processes and gives the sa
 
 ```
 data/
-  train/                                     golden FIR documents for training (configs/data/training_data.toml)
-    <District>_<Station>_PS_<case>_<yy>/      one golden FIR document
+  train/                                     golden documents for training (configs/data/training_data.toml)
+    <Region>_<Unit>_<XX>_<number>_<yy>/       one golden document
       manifest.json
       pages/page_0001/
         page.json                              size, document id

@@ -10,13 +10,8 @@ data_root = "dataEngine/data/test_data/src_golden"
 out_dir = "outputs/data/test/golden"
 exclude_langs = ["mr"]
 drop_invalid = false
-
-[golden.station_overrides]
-# Document ids the <District>_<Station>_PS_<case>_<yy> pattern cannot split correctly.
-# These are readings of the file names, not confirmed: correct them if wrong.
-"Darbhanga_BadhGao_13_26" = ["Darbhanga", "BadhGao"]
-"West_Champaran_Sri_Nagar_PS_90_18" = ["West_Champaran", "Sri_Nagar"]
-"Rail_Patna_Rail_Patna_cyber_PS_09_23" = ["Rail_Patna", "Rail_Patna_cyber"]
+# "<document id>" = ["<region>", "<unit>"] for ids the pattern cannot split; git-ignored (real names)
+overrides_file = "dataEngine/data/test_data/id_overrides.toml"
 
 [split]   # everything in test_data is test data
 out_dir = "outputs/data/test/splits"
@@ -32,5 +27,32 @@ splits = "outputs/data/test/splits"
 data_root = "dataEngine/data/test_data/src_golden"
 out_dir = "outputs/data/test/crops/golden_regions"
 
-# Mozhi and IIIT-HW test words come from their official downloads: the test split of
-# `crops --source mozhi_hi / iiit_hw_dev` (configs/data/training_data.toml).
+# Mozhi and IIIT-HW dev (official val) and test words. A machine with the full downloads gets
+# them from `crops --source mozhi_hi / iiit_hw_dev` in configs/data/training_data.toml (all splits).
+# An eval-only machine with just the official val + test splits in test_data uses these two: same
+# label files, so the same record ids, written to the same folders the eval config reads.
+# Dev = checkpoint curves during training; test = M1/M2 reports only.
+#   python -m dataEngine --config configs/data/test_data.toml --workers 8 crops --source mozhi_hi
+#   python -m dataEngine --config configs/data/test_data.toml --workers 8 crops --source iiit_hw_dev
+
+[[sources]]   # Mozhi-Hindi val / test splits (10,114 / 10,173 printed words), https://ilocr.iiit.ac.in/dataset/7/
+name = "mozhi_hi"
+converter = "labelled_folder"
+root = "dataEngine/data/test_data/mozhi"
+label_files = { dev = "val/val_gt.txt", test = "test_gt.txt" }
+separator = "\t"
+langs = ["hi"]
+script = "printed"
+level = "word"
+out_dir = "outputs/data/crops/mozhi_hi"
+
+[[sources]]   # IIIT-INDIC-HW-WORDS-Hindi val / test splits (12,708 / 12,869 handwritten words), https://ilocr.iiit.ac.in/dataset/18/
+name = "iiit_hw_dev"
+converter = "labelled_folder"
+root = "dataEngine/data/test_data/iiit_hw"
+label_files = { dev = "val/val_gt.txt", test = "test/test_gt.txt" }
+separator = "\t"
+langs = ["hi"]
+script = "handwritten"
+level = "word"
+out_dir = "outputs/data/crops/iiit_hw_dev"

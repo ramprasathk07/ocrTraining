@@ -8,12 +8,13 @@ data_root = "dataEngine/data/train"
 out_dir = "outputs/data/golden"
 exclude_langs = ["mr"]   # V1 is Hindi + English; Marathi pages are set aside for V2
 drop_invalid = false     # true = skip invalid pages; every one is listed in problems.json
+overrides_file = "dataEngine/data/id_overrides.toml"   # ids the pattern cannot split; git-ignored
 
 [split]
 out_dir = "outputs/data/splits"
 test_fraction = 0.15
 dev_fraction = 0.15
-max_group_fraction = 0.15   # a police station larger than this is split by document
+max_group_fraction = 0.15   # a writer group larger than this is split by document
 
 [[sources]]
 name = "golden_regions"

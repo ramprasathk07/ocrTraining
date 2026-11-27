@@ -2,26 +2,44 @@
 
 from collections import defaultdict
 
-from evaluation.metrics import cer, wer
+from evaluation.metrics import aer, cer, matra_error_rate, one_minus_ned, wer
 from evaluation.page_metrics import aggregate, score_page
 
 PAGE_TASK = "page_parse"
 GATE_BOUNDS = ("max_value", "min_value", "max_absolute_change", "max_relative_change")
 GATE_KEYS = {"group", "metric", *GATE_BOUNDS}
 
+# (metric, heading, scale): values are shown × scale (100 = percent)
 CROP_TABLES = (
-    ("cer", "Crop CER % (lower is better)"),
-    ("wer", "Crop WER % (lower is better)"),
-    ("exact_match", "Crop exact match % (higher is better)"),
+    ("cer", "Crop CER % (lower is better)", 100),
+    ("aer", "Crop AER, akshara error rate % (lower is better)", 100),
+    ("wer", "Crop WER % (lower is better)", 100),
+    ("matra_er", "Crop matra / diacritic error rate % (lower is better)", 100),
+    ("one_minus_ned", "Crop 1 - NED % (higher is better)", 100),
+    ("exact_match", "Crop exact match % (higher is better)", 100),
 )
 PAGE_TABLES = (
-    ("page_cer", "Page CER % (lower is better)"),
-    ("layout_ap50", "Layout AP@50, class-agnostic % (higher is better)"),
-    ("layout_map50", "Layout mAP@50, class-aware % (higher is better)"),
-    ("mean_iou", "Mean box IoU % (higher is better)"),
-    ("block_f1", "Block F1@0.5 % (higher is better)"),
-    ("reading_order", "Reading-order accuracy % (higher is better)"),
-    ("valid_output", "Valid structured output % (higher is better)"),
+    ("page_cer", "Page CER % (lower is better)", 100),
+    ("layout_ap50", "Layout AP@50, class-agnostic % (higher is better)", 100),
+    ("layout_map50", "Layout mAP@50, class-aware % (higher is better)", 100),
+    ("mean_iou", "Mean box IoU % (higher is better)", 100),
+    ("block_f1", "Block F1@0.5 % (higher is better)", 100),
+    ("reading_order", "Reading-order accuracy % (higher is better)", 100),
+    ("valid_output", "Valid structured output % (higher is better)", 100),
+)
+LATENCY_TABLE = (
+    "latency_s",
+    "Mean latency, seconds per item (lower is better; batch 1 on the eval GPU)",
+    1,
+)
+CROP_RATES = (  # (score key, function, nfc)
+    ("cer", cer, False),
+    ("cer_nfc", cer, True),
+    ("aer", aer, False),
+    ("wer", wer, False),
+    ("wer_nfc", wer, True),
+    ("matra_er", matra_error_rate, False),
+    ("one_minus_ned", one_minus_ned, False),
 )
 NOT_MEASURED = (
     "Extraction field F1: the data has no field labels (key-value fields are outside V1 scope).",
@@ -37,43 +55,47 @@ def group_keys(prediction: dict) -> list[str]:
     return keys
 
 
+def _latency(predictions: list[dict]) -> float | None:
+    """Mean generation seconds; None for predictions cached before timing was recorded."""
+    seconds = [p["seconds"] for p in predictions if "seconds" in p]
+    return sum(seconds) / len(seconds) if seconds else None
+
+
 def _score_crops(predictions: list[dict]) -> dict[str, dict]:
-    """Per group: CER/WER (raw + NFC), exact-match rate, empty-output rate."""
-    groups: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    """Per group: the CROP_RATES, exact-match rate, empty-output rate, latency."""
+    groups: dict[str, list[dict]] = defaultdict(list)
     for p in predictions:
         for key in group_keys(p):
-            groups[key].append((p["target"], p["prediction"]))
+            groups[key].append(p)
     scores = {}
-    for key, pairs in groups.items():
+    for key, items in groups.items():
+        pairs = [(p["target"], p["prediction"]) for p in items]
         entry = {
             "n": len(pairs),
             "exact_match": sum(t == h for t, h in pairs) / len(pairs),
             "empty_output": sum(bool(t.strip()) and not h.strip() for t, h in pairs) / len(pairs),
+            "latency_s": _latency(items),
         }
-        for metric, rate, nfc in (
-            ("cer", cer, False),
-            ("cer_nfc", cer, True),
-            ("wer", wer, False),
-            ("wer_nfc", wer, True),
-        ):
+        for metric, rate, nfc in CROP_RATES:
             try:
                 entry[metric] = rate(pairs, nfc=nfc)
-            except ValueError:  # every reference empty (e.g. blank stamps): no rate exists
+            except ValueError:  # e.g. every reference empty (blank stamps): no rate exists
                 entry[metric] = None
         scores[key] = entry
     return scores
 
 
 def score(predictions: list[dict]) -> dict[str, dict]:
-    """Crop items: CER/WER by source, script, language. Page items: page metrics by source."""
+    """Crop items: text metrics by source, script, language. Page items: page metrics by source."""
     crops = [p for p in predictions if p["task"] != PAGE_TASK]
     scores = _score_crops(crops)
     pages: dict[str, list[dict]] = defaultdict(list)
     for p in predictions:
         if p["task"] == PAGE_TASK:
-            pages[p["source"]].append(score_page(p["blocks"], p["prediction"], p["finished"]))
-    for source, page_scores in pages.items():
-        scores[f"source={source}"] = aggregate(page_scores)
+            pages[p["source"]].append(p)
+    for source, items in pages.items():
+        page_scores = [score_page(p["blocks"], p["prediction"], p["finished"]) for p in items]
+        scores[f"source={source}"] = {**aggregate(page_scores), "latency_s": _latency(items)}
     return dict(sorted(scores.items()))
 
 
@@ -153,11 +175,13 @@ def _short(text: str, limit: int = 160) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-def _table(metric: str, heading: str, labels: list[str], scores: list[dict]) -> list[str]:
+def _table(
+    metric: str, heading: str, scale: int, labels: list[str], scores: list[dict]
+) -> list[str]:
     groups = sorted(
         g
         for g in set().union(*(s.keys() for s in scores))
-        if any(metric in s.get(g, {}) for s in scores)
+        if any(s.get(g, {}).get(metric) is not None for s in scores)
     )
     if not groups:
         return []
@@ -165,12 +189,13 @@ def _table(metric: str, heading: str, labels: list[str], scores: list[dict]) -> 
     lines = ["", f"## {heading}", "", "| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for group in groups:
         values = [s.get(group, {}).get(metric) for s in scores]
+        shown = ["—" if v is None else f"{scale * v:.2f}" for v in values]
         deltas = [
-            "—" if v is None or values[0] is None else f"{100 * (v - values[0]):+.2f}"
+            "—" if v is None or values[0] is None else f"{scale * (v - values[0]):+.2f}"
             for v in values[1:]
         ]
         n = next((s[group]["n"] for s in scores if group in s), 0)
-        lines.append("| " + " | ".join([group, str(n), *map(_pct, values), *deltas]) + " |")
+        lines.append("| " + " | ".join([group, str(n), *shown, *deltas]) + " |")
     return lines
 
 
@@ -197,8 +222,8 @@ def markdown_report(
         text = used["prompt"].replace("\n", "\\n").replace("|", "\\|")
         lines.append(f"| {task} | `{used['version']}` | `{text}` |")
     lines += [f"\n**Prompt mismatch:** {warning}" for warning in prompt_warnings]
-    for metric, heading in CROP_TABLES + PAGE_TABLES:
-        lines += _table(metric, heading, labels, scores)
+    for metric, heading, scale in (*CROP_TABLES, *PAGE_TABLES, LATENCY_TABLE):
+        lines += _table(metric, heading, scale, labels, scores)
     if any(gates):
         lines += [
             "",

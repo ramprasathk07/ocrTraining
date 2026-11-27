@@ -19,13 +19,13 @@ Part of the [training plan](training-plan.md).
 ## 2. Results
 
 **Text used:**
-- **Hindi:** all `source_text` from the 115 Hindi regions in `dataEngine/data/` (real FIRs).
-- **English:** a sample FIR sentence.
+- **Hindi:** all `source_text` from the 115 Hindi regions in `dataEngine/data/` (real golden pages).
+- **English:** a sample sentence.
 - **Marathi:** checked for V2.
 
 | Text | Words | Characters | Tokens | Tokens / word | Characters / token | Exact round-trip |
 |---|---|---|---|---|---|---|
-| Hindi, real FIR text | 3,024 | 17,355 | 9,473 | **3.13** | 1.83 | ✅ |
+| Hindi, real golden text | 3,024 | 17,355 | 9,473 | **3.13** | 1.83 | ✅ |
 | English sample | 17 | 100 | 25 | **1.47** | 4.00 | ✅ |
 | Marathi sample (V2) | 47 | 332 | 202 | 4.30 | 1.64 | ✅ (incl. ळ, ऱ, ॲ) |
 

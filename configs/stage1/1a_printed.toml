@@ -131,7 +131,7 @@ group = "script=handwritten"
 metric = "cer"
 max_absolute_change = 0.005
 
-[[eval.gates]]   # nor FIR reading
+[[eval.gates]]   # nor golden-region reading
 group = "source=golden_regions"
 metric = "cer"
 max_absolute_change = 0.005

@@ -120,18 +120,18 @@ Record each answer here when the user gives it. Never re-ask a recorded decision
 | Languages (V1) | Hindi + English only (translation target English). Marathi deferred to V2 | 2026-11-18 |
 | Time box | M1 results by 2026-12-20, M2 final by 2027-01-17 (hard limit) | 2026-11-18 |
 | Task output (V1) | Grounded bilingual blocks: box (0–999) + IndicDLP label + reading order + source + English. No key-value fields | 2026-11-18 |
-| Golden data | ~3K pages of Bihar police FIRs/complaints, fully human-checked = ground truth | 2026-11-18 |
+| Golden data | ~3K private pages, fully human-checked = ground truth | 2026-11-18 |
 | Licence use | Research / internal only. Academic-licence datasets allowed | 2026-11-18 |
 | Training method | LoRA per stage + full `projector`. No whole-model full fine-tune. Tokenizer unchanged (see `docs/tokenizer-check.md`) | 2026-11-18 |
-| Split | By police station (fallback: by document). Test used only for the M1/M2 reports | 2026-11-18 |
+| Split | By writer group `region/unit` (fallback: by document). Test used only for the M1/M2 reports | 2026-11-18 |
 | Compute | A6000 48GB primary. MI300X after a ROCm smoke test. RTX 3060 for data/smoke tests | 2026-11-18 |
 | Training framework | HF Trainer + PEFT on the official checkpoint (replaces "Unsloth first"; Unsloth only if too slow). Pinned in `pyproject.toml`: py 3.12, torch 2.6.0, transformers 4.46.3, peft 0.13.2, accelerate 1.1.1 | 2026-11-18 |
 | Trainable parts (Stage 1) | LoRA on DeepEncoder V2 attention (r8, α16, lr 5e-5) + decoder attention (r16, α32, lr 1e-4) = 3,047,424 params. SAM, convs, projector, experts, router, embeddings, LM head frozen. Loader disables the official `no_grad` on the vision path | 2026-11-19 |
 | Evaluation | Before/after runner: first `--checkpoint` is before; one shared eval suite per stage; report with gates per config | 2026-11-19 |
-| Test data + page metrics | `dataEngine/data/test_data` (Mozhi printed words, 49 golden FIR pages) is evaluation-only. Page metrics: page CER, AP/mAP@50 (output-order ranking), box IoU, block F1, reading order, valid output. Field F1 not measurable (no labels); translation reviewed by hand from Stage 4 | 2026-11-19 |
+| Test data + page metrics | `dataEngine/data/test_data` (Mozhi printed words, 49 golden pages) is evaluation-only. Page metrics: page CER, AP/mAP@50 (output-order ranking), box IoU, block F1, reading order, valid output. Field F1 not measurable (no labels); translation reviewed by hand from Stage 4 | 2026-11-19 |
 | Stage structure | One run config per stage/sub-stage in `configs/stage<N>/` with `[stage] id, description, starts_from`; `python -m training.stages` is the tree. Training type = task in `dataEngine/tasks.py` (prompt + record kind); training and evaluation share `read_split` | 2026-11-19 |
 | Prompt registries | Training: `report/prompts/training/` (runs.md). Evaluation: `report/prompts/eval/` (leaderboard.md). Versions are prompt-text hashes; reports flag training/eval prompt mismatch | 2026-11-19 |
-| Station mapping | Document ids that do not fit `<District>_<Station>_PS_<case>_<yy>` go in `[golden.station_overrides]`; the 3 in configs/data/test_data.toml are unconfirmed readings | 2026-11-19 |
+| Document-id mapping | Ids that do not fit `<Region>_<Unit>_<XX>_<number>_<yy>` go in the git-ignored `[golden] overrides_file` (real names stay out of git); some are unconfirmed readings | 2026-11-19 |
 | Naming | Keep `dataEngine/` folder; all modules and functions snake_case | 2026-11-18 |
 | Config format | TOML (stdlib `tomllib`), one file per run in `configs/` | 2026-11-18 |
 | Dev tools | ruff (lint + format), pytest. Training logs: TensorBoard via the Trainer | 2026-11-18 |

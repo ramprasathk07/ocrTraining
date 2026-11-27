@@ -1,4 +1,5 @@
-"""Golden pages (human-checked FIRs in `dataEngine/data/`) → PageRecords, plus validation.
+"""Golden pages (private, human-checked documents in `dataEngine/data/`) → PageRecords,
+plus validation.
 
 Only `png/page.png` is used as the model image. `image/page_regions.png` has the answer
 boxes drawn on it and must never reach a model.
@@ -27,22 +28,22 @@ INDICDLP_LABELS = frozenset(
 )  # fmt: skip
 STATUSES = frozenset({"ok", "partial", "illegible", "no_text"})
 
-_STATION = re.compile(r"^(?P<district>[^_]+)_(?P<station>.+)_PS_(?P<case>\d+)_(?P<year>\d{2})$")
+_DOCUMENT_ID = re.compile(r"^(?P<region>[^_]+)_(?P<unit>.+)_[A-Z]{2}_\d+_\d{2}$")
 _MARKER = re.compile(r"\[(?:illegible|uncertain:[^\[\]]*)\]")
 
 
-def parse_station(document_id: str, overrides: dict[str, list[str]]) -> tuple[str, str]:
-    """(district, station) from `overrides`, else from `<District>_<Station>_PS_<case>_<yy>`."""
+def parse_group(document_id: str, overrides: dict[str, list[str]]) -> tuple[str, str]:
+    """(region, unit) from `overrides`, else from `<Region>_<Unit>_<XX>_<number>_<yy>`."""
     if document_id in overrides:
-        district, station = overrides[document_id]
-        return district, station
-    match = _STATION.match(document_id)
+        region, unit = overrides[document_id]
+        return region, unit
+    match = _DOCUMENT_ID.match(document_id)
     if match is None:
         raise ValueError(
-            f"document id {document_id!r} does not match <District>_<Station>_PS_<case>_<yy>; "
-            "add it to [golden.station_overrides] instead of guessing"
+            f"document id {document_id!r} does not match <Region>_<Unit>_<XX>_<number>_<yy>; "
+            "add it to the [golden] overrides_file instead of guessing"
         )
-    return match["district"], match["station"]
+    return match["region"], match["unit"]
 
 
 def to_999(value: int, size: int) -> int:
@@ -66,7 +67,7 @@ def convert_page(page_dir: Path, data_root: Path, overrides: dict[str, list[str]
     }
     source_regions = _read_json(page_dir / "source_language_extraction" / "page.json")["regions"]
     width, height = page["width_px"], page["height_px"]
-    district, station = parse_station(page["document_id"], overrides)
+    region, unit = parse_group(page["document_id"], overrides)
 
     blocks = []
     for region in sorted(source_regions, key=lambda r: r["reading_order"]):
@@ -97,8 +98,8 @@ def convert_page(page_dir: Path, data_root: Path, overrides: dict[str, list[str]
     return PageRecord(
         page_id=page["page_id"],
         document_id=page["document_id"],
-        district=district,
-        police_station=station,
+        region=region,
+        unit=unit,
         image=(page_dir / "png" / "page.png").relative_to(data_root).as_posix(),
         image_sha256=page["image_sha256"],
         width=width,

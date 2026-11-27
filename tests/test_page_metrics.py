@@ -43,7 +43,7 @@ def test_reading_order_accuracy():
 
 
 def test_perfect_page():
-    gt = _gt(("header", A, "थाना"), ("paragraph", B, "निवेदन पूर्वक"), ("figure", C, ""))
+    gt = _gt(("header", A, "पत्र"), ("paragraph", B, "निवेदन पूर्वक"), ("figure", C, ""))
     prediction = serialize([IRBlock(g["label"], tuple(g["box"]), g["text"]) for g in gt])
     scores = aggregate([score_page(gt, prediction, finished=True)])
     assert scores["page_cer"] == 0.0
@@ -53,11 +53,11 @@ def test_perfect_page():
 
 
 def test_base_model_page_with_other_labels_html_and_swapped_order():
-    gt = _gt(("header", A, "थाना"), ("table", B, "क ख"))
+    gt = _gt(("header", A, "पत्र"), ("table", B, "क ख"))
     prediction = (
         "<|ref|>table<|/ref|><|det|>[[200, 0, 300, 100]]<|/det|>\n"
         "<table><tr><td>क ख</td></tr></table>\n\n"
-        "<|ref|>title<|/ref|><|det|>[[0, 0, 100, 100]]<|/det|>\nथाना"
+        "<|ref|>title<|/ref|><|det|>[[0, 0, 100, 100]]<|/det|>\nपत्र"
     )
     scores = aggregate([score_page(gt, prediction, finished=True)])
     assert scores["mean_iou"] == 1.0 and scores["block_f1"] == 1.0
@@ -68,9 +68,9 @@ def test_base_model_page_with_other_labels_html_and_swapped_order():
 
 
 def test_truncated_or_unstructured_output_is_invalid():
-    gt = _gt(("header", A, "थाना"))
-    good = serialize([IRBlock("header", A, "थाना")])
+    gt = _gt(("header", A, "पत्र"))
+    good = serialize([IRBlock("header", A, "पत्र")])
     assert aggregate([score_page(gt, good, finished=False)])["valid_output"] == 0.0
-    plain = aggregate([score_page(gt, "थाना", finished=True)])
+    plain = aggregate([score_page(gt, "पत्र", finished=True)])
     assert plain["valid_output"] == 0.0 and plain["mean_iou"] == 0.0
     assert plain["page_cer"] == 0.0  # plain text still gets a page CER

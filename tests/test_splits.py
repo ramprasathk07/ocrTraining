@@ -6,8 +6,8 @@ from dataEngine.records import PageRecord
 from dataEngine.splits import assign_splits, read_splits, write_splits
 
 
-def _page(page_id: str, station: str, document: str) -> PageRecord:
-    return PageRecord(page_id, document, "D", station, "x.png", "", 10, 10, ())
+def _page(page_id: str, unit: str, document: str) -> PageRecord:
+    return PageRecord(page_id, document, "D", unit, "x.png", "", 10, 10, ())
 
 
 def _pages() -> list[PageRecord]:
@@ -22,10 +22,10 @@ def test_split_is_deterministic_and_never_splits_a_group():
     again, _ = assign_splits(list(reversed(pages)), 0.15, 0.15, 0.15, seed=7)
     assert assignment == again
 
-    assert info["stations_split_by_document"] == ["D/big"]  # 40 of 140 pages > 15%
+    assert info["groups_split_by_document"] == ["D/big"]  # 40 of 140 pages > 15%
     groups = defaultdict(set)
     for page in pages:
-        key = page.document_id if page.police_station == "big" else page.police_station
+        key = page.document_id if page.unit == "big" else page.unit
         groups[key].add(assignment[page.page_id])
     assert all(len(splits) == 1 for splits in groups.values())
 

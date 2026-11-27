@@ -1,0 +1,90 @@
+[
+  {
+    "step": 0,
+    "source": "Mozhi printed (dev)",
+    "n": 200,
+    "cer": 14.42206896551724,
+    "aer": 23.835616438356166,
+    "wer": 6.595,
+    "matra_er": 1.0,
+    "one_minus_ned": 0.008153610284757827,
+    "exact_match": 0.005
+  },
+  {
+    "step": 0,
+    "source": "IIIT-HW handwritten (dev)",
+    "n": 200,
+    "cer": 3.888235294117647,
+    "aer": 7.147286821705427,
+    "wer": 3.765,
+    "matra_er": 1.0,
+    "one_minus_ned": 0.0008438155620661925,
+    "exact_match": 0.0
+  },
+  {
+    "step": 400,
+    "source": "Mozhi printed (dev)",
+    "n": 200,
+    "cer": 0.29517241379310344,
+    "aer": 0.3264840182648402,
+    "wer": 0.33,
+    "matra_er": 0.424812030075188,
+    "one_minus_ned": 0.8070111000111,
+    "exact_match": 0.67
+  },
+  {
+    "step": 400,
+    "source": "IIIT-HW handwritten (dev)",
+    "n": 200,
+    "cer": 0.8663865546218488,
+    "aer": 0.9674418604651163,
+    "wer": 0.995,
+    "matra_er": 1.1089324618736383,
+    "one_minus_ned": 0.18159235209235208,
+    "exact_match": 0.005
+  },
+  {
+    "step": 500,
+    "source": "Mozhi printed (dev)",
+    "n": 200,
+    "cer": 0.22482758620689655,
+    "aer": 0.2534246575342466,
+    "wer": 0.285,
+    "matra_er": 0.3007518796992481,
+    "one_minus_ned": 0.8538751526251527,
+    "exact_match": 0.715
+  },
+  {
+    "step": 500,
+    "source": "IIIT-HW handwritten (dev)",
+    "n": 200,
+    "cer": 0.8579831932773109,
+    "aer": 0.9472868217054263,
+    "wer": 0.985,
+    "matra_er": 1.037037037037037,
+    "one_minus_ned": 0.20991533466533469,
+    "exact_match": 0.015
+  },
+  {
+    "step": 700,
+    "source": "Mozhi printed (dev)",
+    "n": 200,
+    "cer": 0.16827586206896553,
+    "aer": 0.182648401826484,
+    "wer": 0.225,
+    "matra_er": 0.22180451127819548,
+    "one_minus_ned": 0.8889737484737484,
+    "exact_match": 0.775
+  },
+  {
+    "step": 700,
+    "source": "IIIT-HW handwritten (dev)",
+    "n": 200,
+    "cer": 0.83109243697479,
+    "aer": 0.9193798449612403,
+    "wer": 0.985,
+    "matra_er": 0.9956427015250545,
+    "one_minus_ned": 0.24700793650793648,
+    "exact_match": 0.015
+  }
+]

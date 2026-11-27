@@ -39,8 +39,8 @@ class PageRecord:
 
     page_id: str
     document_id: str
-    district: str
-    police_station: str
+    region: str
+    unit: str  # who wrote the document: the split group, so one writer stays in one split
     image: str
     image_sha256: str
     width: int
@@ -56,8 +56,8 @@ class PageRecord:
         return PAGE_LEVEL
 
     @property
-    def station_key(self) -> str:
-        return f"{self.district}/{self.police_station}"
+    def group_key(self) -> str:
+        return f"{self.region}/{self.unit}"
 
     @property
     def langs(self) -> set[str]:

@@ -15,7 +15,7 @@ image_size = 768
 crop_mode = false
 
 [eval]
-output_dir = "outputs/eval/test_data"   # predictions (raw FIR text): private, git-ignored
+output_dir = "outputs/eval/test_data"   # predictions (raw private text): git-ignored
 report_dir = "report/test_data"        # report_<split>.md / .json
 prompts_dir = "report/prompts/eval"   # eval prompt registry + leaderboard
 no_repeat_ngram_size = 35   # the model's own eval setting
@@ -43,7 +43,7 @@ path = "outputs/data/crops/iiit_hw_dev"
 limit = 200
 max_new_tokens = 128
 
-[[eval.sources]]   # FIR region reading; regions are paragraph-sized, so tiles
+[[eval.sources]]   # golden region reading; regions are paragraph-sized, so tiles
 name = "golden_regions"
 task = "crop_ocr"
 path = "outputs/data/test/crops/golden_regions"
@@ -67,7 +67,7 @@ group = "source=printed_words"
 metric = "cer"
 max_value = 0.03
 
-[[eval.gates]]   # Stage 2: government page CER ≤ 5%
+[[eval.gates]]   # Stage 2: golden page CER ≤ 5%
 group = "source=golden_pages"
 metric = "page_cer"
 max_value = 0.05
